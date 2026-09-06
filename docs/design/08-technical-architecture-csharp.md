@@ -10,7 +10,7 @@ Concrete technology mapping for the rewrite. The language-agnostic design in [01
 
 - Single self-contained service process, one deployable container image (`ghcr.io/ryandanthony/nats-auth-callout-service`).
 - Runs both in Kubernetes (CRD source) and standalone (files source); the process must not hard-depend on being in a cluster.
-- Long-lived background worker, not an HTTP/web app — no inbound API surface beyond NATS (per [01](./01-overview.md) responsibilities).
+- Long-lived background worker, not a general HTTP/web app — no inbound business API beyond NATS (per [01](./01-overview.md) responsibilities). The only HTTP surface is a minimal health/readiness endpoint for the orchestrator (see [Health & readiness](#health--readiness)).
 - Config-driven, fail-closed, hot-reloadable routing config.
 
 ## Stack selection
@@ -27,6 +27,7 @@ Concrete technology mapping for the rewrite. The language-agnostic design in [01
 | YAML files source | YamlDotNet | `YamlDotNet` | Per-app JSON/YAML files (JSON handled by `System.Text.Json`). |
 | Secrets | custom `ISecretResolver` | (in-tree) | `inline | file | k8sSecret | vault` per [04](./04-configuration.md). File + k8sSecret first; vault behind the same interface. |
 | Observability | OpenTelemetry | `OpenTelemetry.Extensions.Hosting`, `.Exporter.OtlpProtocol` | Metrics + traces + logs per [05 Observability](./05-runtime-and-lifecycle.md). One span per auth request, four stage events. |
+| Health | Health checks + minimal API | `Microsoft.Extensions.Diagnostics.HealthChecks`, ASP.NET Core minimal APIs | Tagged component checks mapped to startup/live/ready probes with a JSON response writer (see [Health & readiness](#health--readiness)). |
 | Resilience | Polly | `Microsoft.Extensions.Http.Resilience` / `Polly` | JWKS fetch retry/timeout, k8s watch reconnect backoff. |
 | Tests | xUnit + Testcontainers | `xUnit`, `Testcontainers`, `NSubstitute` | Decision layer unit-tested in isolation; integration against real `nats-server -js` and a kind/k3s CRD via Testcontainers. |
 
@@ -115,6 +116,53 @@ await foreach (var msg in nc.SubscribeAsync<byte[]>("$SYS.REQ.USER.AUTH", cancel
 
 The minter signs both the user JWT and the authorization response with the issuer signing seed (loaded once from a `SecretRef`, [05](./05-runtime-and-lifecycle.md)).
 
+## Health & readiness
+
+The service is not a business HTTP API, but it uses the **full** `Microsoft.Extensions.Diagnostics.HealthChecks` feature set behind a minimal `WebApplication` on a dedicated port (e.g. `8080`), separate from NATS traffic. Named component checks are tagged so the three Kubernetes probe types map to different check subsets, and a JSON response writer exposes per-check detail for humans and dashboards.
+
+### Component checks
+
+Each dependency is its own registered `IHealthCheck`, reporting `Healthy` / `Degraded` / `Unhealthy` with data:
+
+| Check | Tags | Meaning |
+|-------|------|---------|
+| `self` | `live` | Process is up and the host is not faulted. |
+| `nats-connection` | `ready` | NATS connection is open and the callout subscription to `$SYS.REQ.USER.AUTH` is active. |
+| `config-active` | `ready` | A valid routing config is loaded (state is `Serving`, not `Idle`/`Starting`). |
+| `config-source` | `ready` | The active source is healthy: file watcher alive, or the k8s CRD watch is connected (a dead watch is `Unhealthy`, [ADR 0005](../architecture-decision-log/0005-config-abstraction-and-sources.md)). |
+| `jwks` | (none, informational) | Per-issuer JWKS reachable/cached; reported as `Degraded` on stale cache so it never fails readiness on a transient IdP blip. |
+| `started` | `startup` | One-time: bootstrap loaded, secrets resolved, first config decision made. |
+
+### Probe mapping
+
+- **`/healthz` (liveness)** — `live`-tagged checks only. `200` while the process runs and isn't deadlocked; independent of config/NATS so a transient `Idle` never restarts the pod.
+- **`/readyz` (readiness)** — `ready`-tagged checks. `200` only in the `Serving` state ([05](./05-runtime-and-lifecycle.md)): valid config active **and** NATS connected and subscribed. Any `Unhealthy` ready check returns `503` so the orchestrator stops routing to it.
+- **`/startupz` (startup)** — `startup`-tagged. Gates the k8s `startupProbe` so slow first-config/secret resolution doesn't trip liveness during boot.
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddHealthChecks()
+    .AddCheck<SelfHealthCheck>("self", tags: ["live"])
+    .AddCheck<NatsConnectionHealthCheck>("nats-connection", tags: ["ready"])
+    .AddCheck<ConfigActiveHealthCheck>("config-active", tags: ["ready"])
+    .AddCheck<ConfigSourceHealthCheck>("config-source", tags: ["ready"])
+    .AddCheck<JwksHealthCheck>("jwks")                        // informational, untagged
+    .AddCheck<StartupHealthCheck>("started", tags: ["startup"]);
+
+var app = builder.Build();
+var opts = new HealthCheckOptions { ResponseWriter = WriteJsonHealthResponse };  // per-check detail
+app.MapHealthChecks("/healthz",  Filter("live",    opts));
+app.MapHealthChecks("/readyz",   Filter("ready",   opts));
+app.MapHealthChecks("/startupz", Filter("startup", opts));
+// CalloutResponder, config providers, connection manager run as hosted services on the same host
+app.Run();
+
+static HealthCheckOptions Filter(string tag, HealthCheckOptions o) =>
+    new() { Predicate = c => c.Tags.Contains(tag), ResponseWriter = o.ResponseWriter };
+```
+
+The component checks read the same state the `NatsConnectionManager`, config providers, and JWKS provider own, so health can't claim ready while the service answers nothing. The JSON writer emits each check's status, description, duration, and `data` (never secrets). Metrics still flow via the OTLP exporter; the health endpoints are for orchestrator probes and quick human inspection, not scraping.
+
 ## KV / identity stores (maps [07](./07-kv-storage.md) to NATS.Net KV)
 
 ```csharp
@@ -162,15 +210,14 @@ Active config is a single immutable snapshot behind a `volatile` reference (or `
 These are not in [01](./01-overview.md)–[07](./07-kv-storage.md) and should be decided before or during the rewrite:
 
 1. **KV bucket naming contract.** Dotted subjects can't be bucket names; the slug→bucket mapping is a consumer-facing interface. Defined in [ADR 0013](../architecture-decision-log/0013-kv-bucket-naming-contract.md).
-2. **Health & readiness.** The service has no HTTP surface, but k8s wants liveness/readiness. Add a minimal `/healthz` `/readyz` (map `readyz` to the `Serving` state) via `Microsoft.Extensions.Diagnostics.HealthChecks`, or a NATS-based health check. Not covered by current design.
-3. **Watch-loss = fail-closed semantics.** [05](./05-runtime-and-lifecycle.md) covers bad config, not a silently dead k8s watch or lost NATS connection. Define: lost NATS connection → stop answering (already implied); dead config watch → keep last-good but alert, with a staleness bound.
-4. **Concurrency / backpressure.** Auth callout is on the client connect path. Define max in-flight auth requests, per-request timeout, and JWKS-fetch timeout so a slow IdP can't stall connects. Polly + bounded channel.
-5. **Clock skew / token validation params.** `ClockSkew`, allowed algorithms (reject `none`/HS* when expecting RS/ES), `ValidateAudience` defaults per [04](./04-configuration.md). Make these explicit.
-6. **Key rotation orchestration.** [05](./05-runtime-and-lifecycle.md) says the assertion key rotates independently; define the rotation trigger, overlap window (publish new `kid` before retiring old), and how the issuer seed rotates (server config coupling).
-7. **Multi-instance behavior.** Cluster-wide CRD watch + label selector implies multiple instances can share a cluster. Confirm: are two instances answering the same callout account HA/active-active, and is that safe (idempotent KV writes, duplicate events)? Events stream is best-effort so duplicates are OK; confirm KV writes are last-writer-wins safe.
-8. **Supply chain / build.** .NET 10 container via `Microsoft.NET.Build.Containers` or Dockerfile, trimming/AOT decision (NKeys/crypto + reflection-based config binding may block full AOT — likely trimmed, not AOT). SBOM + image signing to match your GHCR flow.
-9. **Schema versioning for events + CRD.** Event `schemaVersion` exists ([05](./05-runtime-and-lifecycle.md)); the CRD needs its own `apiVersion` evolution story (v1 → v1beta conversions) and the discovery descriptor schema needs a version too.
-10. **Local dev / no-k8s story.** Files source + a `docker-compose` with `nats-server -js` + Keycloak for a full loop, so the decision core is runnable without a cluster.
+2. **Watch-loss = fail-closed semantics.** [05](./05-runtime-and-lifecycle.md) covers bad config, not a silently dead k8s watch or lost NATS connection. Define: lost NATS connection → stop answering (already implied); dead config watch → keep last-good but alert, with a staleness bound.
+3. **Concurrency / backpressure.** Auth callout is on the client connect path. Define max in-flight auth requests, per-request timeout, and JWKS-fetch timeout so a slow IdP can't stall connects. Polly + bounded channel.
+4. **Clock skew / token validation params.** `ClockSkew`, allowed algorithms (reject `none`/HS* when expecting RS/ES), `ValidateAudience` defaults per [04](./04-configuration.md). Make these explicit.
+5. **Key rotation orchestration.** [05](./05-runtime-and-lifecycle.md) says the assertion key rotates independently; define the rotation trigger, overlap window (publish new `kid` before retiring old), and how the issuer seed rotates (server config coupling).
+6. **Multi-instance behavior.** Cluster-wide CRD watch + label selector implies multiple instances can share a cluster. Confirm: are two instances answering the same callout account HA/active-active, and is that safe (idempotent KV writes, duplicate events)? Events stream is best-effort so duplicates are OK; confirm KV writes are last-writer-wins safe.
+7. **Supply chain / build.** .NET 10 container via `Microsoft.NET.Build.Containers` or Dockerfile, trimming/AOT decision (NKeys/crypto + reflection-based config binding may block full AOT — likely trimmed, not AOT). SBOM + image signing to match your GHCR flow.
+8. **Schema versioning for events + CRD.** Event `schemaVersion` exists ([05](./05-runtime-and-lifecycle.md)); the CRD needs its own `apiVersion` evolution story (v1 → v1beta conversions) and the discovery descriptor schema needs a version too.
+9. **Local dev / no-k8s story.** Files source + a `docker-compose` with `nats-server -js` + Keycloak for a full loop, so the decision core is runnable without a cluster.
 
 ## Validation / feedback loop for the rewrite
 
