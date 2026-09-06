@@ -19,6 +19,7 @@ It is generic and data-driven: no application-specific subjects or claims are co
 | [05-runtime-and-lifecycle.md](./05-runtime-and-lifecycle.md) | State machine, reload, failure handling, identity stores, observability, events |
 | [06-identity-propagation-sequence.md](./06-identity-propagation-sequence.md) | End-to-end sequence: how client, subscriber, callout, and NATS interact so a subscriber can obtain the client's OIDC JWT |
 | [07-kv-storage.md](./07-kv-storage.md) | Authoritative reference for the KV buckets (token store, id lookup, assertion keys): keys, values, writers, readers, TTLs |
+| [09-schemas-and-versioning.md](./09-schemas-and-versioning.md) | Concrete schemas for events, discovery descriptor, config files (JSON/YAML), and the Kubernetes CRD, plus the versioning strategy for each |
 
 The above are language-agnostic. One implementation-specific doc maps them to a concrete stack:
 

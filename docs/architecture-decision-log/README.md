@@ -22,3 +22,4 @@ The [design](../design/README.md) unifies these ADRs into a cohesive, language-a
 | [0012](./0012-identity-propagation-toggle-and-discovery.md) | Per-application identity-propagation toggle and discovery descriptor | proposed |
 | [0013](./0013-kv-bucket-naming-contract.md) | KV bucket naming contract | proposed |
 | [0014](./0014-key-rotation-orchestration.md) | Key rotation orchestration | proposed |
+| [0015](./0015-schema-versioning-strategy.md) | Schema versioning strategy | proposed |
