@@ -66,7 +66,7 @@ Published per application to `callout_apps_{slug}_discovery` ([ADR 0012](../arch
 
 ### Current version: `schemaVersion: 1`
 
-Enabled application:
+Identity propagation enabled:
 
 ```json
 {
@@ -83,7 +83,7 @@ Enabled application:
 }
 ```
 
-Disabled application:
+Identity propagation disabled:
 
 ```json
 { "schemaVersion": 1, "app": "notes", "identityPropagation": { "enabled": false } }
