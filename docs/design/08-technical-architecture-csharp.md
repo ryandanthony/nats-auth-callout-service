@@ -328,6 +328,22 @@ await foreach (var (type, item) in resp.WatchAsync<AuthApplication, object>(ct))
 
 Active config is a single immutable snapshot behind a `volatile` reference (or `IOptionsMonitor`-style change token). Providers push a validated aggregate; `ConfigAggregator` validates the whole batch atomically ([05](./05-runtime-and-lifecycle.md) rules) and does one reference swap. In-flight requests keep their snapshot; new requests read the new one. No lock on the hot path.
 
+## Watch-loss and connection-loss
+
+Two runtime failures where the data is fine but the service can't trust it is current or reachable, decided in [ADR 0017](../architecture-decision-log/0017-watch-loss-and-connection-loss-semantics.md). The rule: **fail closed on unreachability, shed via readiness on staleness, always recover.**
+
+**Lost NATS connection (fail closed).** On disconnect the service transitions `Serving → Idle`, holds no subscription, and answers nothing; the server times out those callouts and clients retry. `NatsConnection` auto-reconnects with capped backoff and resubscribes with the same queue group; the `nats-connection` readiness check drives `/readyz` to 503 until reconnected. No policy beyond reflecting connection state.
+
+**Dead config watch (keep last-good, bound staleness).** A silently dead k8s watch or file watcher must not stop the service, last-good is still valid config, and going dark on a transient API-server blip is a worse outage. Instead track `lastSuccessfulSync` per source (updated on every successful list/relist, not only on changes, so "no changes" and "not syncing" differ) and treat staleness as a bounded health signal:
+
+| Staleness (`now - lastSuccessfulSync`) | `config-source` health | Serving? | `/readyz` |
+|----------------------------------------|------------------------|----------|-----------|
+| < `warnStalenessSeconds` | `Healthy` (Fresh) | yes | 200 |
+| ≥ warn, < `maxStalenessSeconds` | `Degraded` + alert | yes (Stale) | 200 |
+| ≥ `maxStalenessSeconds` | `Unhealthy` | yes, still last-good | 503 |
+
+At the hard bound the instance becomes **not-ready but keeps serving last-good**: the orchestrator stops routing to it / restarts it (a fresh start relists from scratch and self-heals) without the running instance denying every connect. Stale is not invalid, so shedding via readiness is proportionate; failing closed on valid data would be a self-inflicted outage. Relist/rewatch runs continuously with capped backoff (Polly); a successful sync clears staleness. This adds a `Fresh → Stale(Degraded) → Stale(Unready)` freshness substate to `Serving` and the metrics `config_last_sync_timestamp`, `config_staleness_seconds`, `watch_reconnects_total`, `watch_relists_total`, `watch_failures_total`.
+
 ## Container & supply chain
 
 Shipped as a **multi-stage Dockerfile** (not `Microsoft.NET.Build.Containers`), so the build is explicit and portable across CI and local. The release flow matches the existing GHCR convention (GitVersion → `vX.Y.Z` tag → `docker/build-push-action` → GHCR → GitHub Release), adding **image signing**.
@@ -449,11 +465,21 @@ dev/
     TaskService/
 ```
 
-## What you're missing (gaps the language-neutral design leaves open)
+## Decisions previously open (now resolved)
 
-These are not in [01](./01-overview.md)–[07](./07-kv-storage.md) and should be decided before or during the rewrite:
+Every gap this document originally flagged has been decided and folded into the sections above and dedicated ADRs:
 
-1. **Watch-loss = fail-closed semantics.** [05](./05-runtime-and-lifecycle.md) covers bad config, not a silently dead k8s watch or lost NATS connection. Define: lost NATS connection → stop answering (already implied); dead config watch → keep last-good but alert, with a staleness bound.
+- **KV bucket naming contract** — [ADR 0013](../architecture-decision-log/0013-kv-bucket-naming-contract.md).
+- **Health & readiness** — [Health & readiness](#health--readiness).
+- **JWKS freshness / IdP off the hot path** — [JWKS cache manager](#jwks-cache-manager-keeping-the-idp-off-the-hot-path).
+- **Token validation params (clock skew, algorithms, audience)** — [Token validation](#token-validation), [ADR 0016](../architecture-decision-log/0016-token-validation-parameters.md).
+- **Concurrency / in-process parallelism** — [In-process parallelism and backpressure](#in-process-parallelism-and-backpressure).
+- **Multi-instance HA / exactly-once handling** — [Multiple instances](#multiple-instances-ha-and-exactly-once-handling).
+- **Key rotation** — [ADR 0014](../architecture-decision-log/0014-key-rotation-orchestration.md).
+- **Schema versioning (events, CRD, files)** — [09 — Schemas and versioning](./09-schemas-and-versioning.md), [ADR 0015](../architecture-decision-log/0015-schema-versioning-strategy.md).
+- **Supply chain / build** — [Container & supply chain](#container--supply-chain).
+- **Watch-loss / connection-loss semantics** — [Watch-loss and connection-loss](#watch-loss-and-connection-loss), [ADR 0017](../architecture-decision-log/0017-watch-loss-and-connection-loss-semantics.md).
+- **Local dev / no-k8s story** — [Local development](#local-development-net-aspire).
 
 ## Validation / feedback loop for the rewrite
 

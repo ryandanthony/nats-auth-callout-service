@@ -180,6 +180,8 @@ assertionKeys:                       # keyset, ADR 0014
 source:
   kind: files                        # or k8s
   directory: /config/apps
+  warnStalenessSeconds: 60           # config-source Degraded + alert (ADR 0017)
+  maxStalenessSeconds: 900           # config-source Unhealthy => /readyz 503, still serving last-good
 jwks:                                # JWKS cache manager (doc 08)
   refreshInterval: 5m                # proactive re-fetch cadence per issuer
   fetchTimeout: 5s                   # hard timeout on any single discovery/JWKS fetch (fail closed)
