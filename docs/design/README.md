@@ -20,6 +20,12 @@ It is generic and data-driven: no application-specific subjects or claims are co
 | [06-identity-propagation-sequence.md](./06-identity-propagation-sequence.md) | End-to-end sequence: how client, subscriber, callout, and NATS interact so a subscriber can obtain the client's OIDC JWT |
 | [07-kv-storage.md](./07-kv-storage.md) | Authoritative reference for the KV buckets (token store, id lookup, assertion keys): keys, values, writers, readers, TTLs |
 
+The above are language-agnostic. One implementation-specific doc maps them to a concrete stack:
+
+| Document | Covers |
+|----------|--------|
+| [08-technical-architecture-csharp.md](./08-technical-architecture-csharp.md) | C# / .NET 10 stack: NATS.Net + NATS.Jwt/NKeys, KubernetesClient CRD watch, OIDC/JWKS validation, project layout, and open gaps to decide |
+
 ## Grounding decisions
 
 Every element traces to an ADR (see the [ADR log](../architecture-decision-log/README.md)):
