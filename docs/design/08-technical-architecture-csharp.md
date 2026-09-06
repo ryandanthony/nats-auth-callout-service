@@ -205,6 +205,40 @@ await foreach (var (type, item) in resp.WatchAsync<AuthApplication, object>(ct))
 
 Active config is a single immutable snapshot behind a `volatile` reference (or `IOptionsMonitor`-style change token). Providers push a validated aggregate; `ConfigAggregator` validates the whole batch atomically ([05](./05-runtime-and-lifecycle.md) rules) and does one reference swap. In-flight requests keep their snapshot; new requests read the new one. No lock on the hot path.
 
+## Container & supply chain
+
+Shipped as a **multi-stage Dockerfile** (not `Microsoft.NET.Build.Containers`), so the build is explicit and portable across CI and local. The release flow matches the existing GHCR convention (GitVersion → `vX.Y.Z` tag → `docker/build-push-action` → GHCR → GitHub Release), adding **image signing**.
+
+### Runtime & trimming
+
+- **Framework-dependent, trimmed self-contained** on the `mcr.microsoft.com/dotnet/runtime` base (worker + minimal-API health only; the ASP.NET base is not required since there is no MVC/Razor). Use `linux-x64` (and `linux-arm64` if the NAS/cluster needs it).
+- **Not full Native AOT.** NKeys/crypto and reflection-based config binding (`System.Text.Json` + options) make full AOT fragile; trimming with `TrimmerRootAssembly`/`DynamicDependency` for the config model is the pragmatic choice. Revisit AOT only if cold-start matters.
+- Non-root user, read-only root filesystem, no shell in the final stage.
+
+```dockerfile
+# build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY . .
+ARG VERSION=0.0.0
+RUN dotnet publish src/AuthCallout.Host -c Release -o /app \
+    /p:Version=$VERSION /p:PublishTrimmed=true /p:InvariantGlobalization=true
+
+# runtime
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
+WORKDIR /app
+COPY --from=build /app .
+USER $APP_UID
+EXPOSE 8080
+ENTRYPOINT ["./AuthCallout.Host"]
+```
+
+### Signing & provenance
+
+- **Sign every published image with cosign (keyless, OIDC)** via the GitHub Actions identity: `cosign sign --yes ghcr.io/ryandanthony/nats-auth-callout-service@${DIGEST}`. No long-lived keys; signatures verifiable against the workflow identity. Requires `id-token: write` permission on the release job.
+- **SBOM + attestation**: emit an SBOM (`docker buildx ... --sbom=true` or Syft) and attach it as a cosign attestation, alongside SLSA build provenance (`--provenance=true` on buildx). Deploys can then `cosign verify-attestation` before rollout.
+- Sign the **digest**, not a mutable tag, so `latest`/version tags can move without invalidating the signature.
+
 ## What you're missing (gaps the language-neutral design leaves open)
 
 These are not in [01](./01-overview.md)–[07](./07-kv-storage.md) and should be decided before or during the rewrite:
@@ -215,9 +249,8 @@ These are not in [01](./01-overview.md)–[07](./07-kv-storage.md) and should be
 4. **Clock skew / token validation params.** `ClockSkew`, allowed algorithms (reject `none`/HS* when expecting RS/ES), `ValidateAudience` defaults per [04](./04-configuration.md). Make these explicit.
 5. **Key rotation orchestration.** [05](./05-runtime-and-lifecycle.md) says the assertion key rotates independently; define the rotation trigger, overlap window (publish new `kid` before retiring old), and how the issuer seed rotates (server config coupling).
 6. **Multi-instance behavior.** Cluster-wide CRD watch + label selector implies multiple instances can share a cluster. Confirm: are two instances answering the same callout account HA/active-active, and is that safe (idempotent KV writes, duplicate events)? Events stream is best-effort so duplicates are OK; confirm KV writes are last-writer-wins safe.
-7. **Supply chain / build.** .NET 10 container via `Microsoft.NET.Build.Containers` or Dockerfile, trimming/AOT decision (NKeys/crypto + reflection-based config binding may block full AOT — likely trimmed, not AOT). SBOM + image signing to match your GHCR flow.
-8. **Schema versioning for events + CRD.** Event `schemaVersion` exists ([05](./05-runtime-and-lifecycle.md)); the CRD needs its own `apiVersion` evolution story (v1 → v1beta conversions) and the discovery descriptor schema needs a version too.
-9. **Local dev / no-k8s story.** Files source + a `docker-compose` with `nats-server -js` + Keycloak for a full loop, so the decision core is runnable without a cluster.
+7. **Schema versioning for events + CRD.** Event `schemaVersion` exists ([05](./05-runtime-and-lifecycle.md)); the CRD needs its own `apiVersion` evolution story (v1 → v1beta conversions) and the discovery descriptor schema needs a version too.
+8. **Local dev / no-k8s story.** Files source + a `docker-compose` with `nats-server -js` + Keycloak for a full loop, so the decision core is runnable without a cluster.
 
 ## Validation / feedback loop for the rewrite
 
