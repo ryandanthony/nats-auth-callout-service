@@ -101,50 +101,53 @@ deploy/
 
 ```csharp
 // CalloutResponder — Serving state only. Queue group => one instance handles each request;
-// a bounded worker pool processes requests in parallel within the instance.
-var gate = new SemaphoreSlim(opts.MaxInFlight);               // e.g. 64
-await foreach (var msg in nc.SubscribeAsync<byte[]>(
-        "$SYS.REQ.USER.AUTH", queueGroup: "auth-callout", cancellationToken: ct))
+// Parallel.ForEachAsync processes requests concurrently within the instance (bounded).
+var parallelOpts = new ParallelOptions
 {
-    await gate.WaitAsync(ct);                                 // ceiling only: blocks the reader when MaxInFlight are busy
-    _ = HandleAsync(msg, ct).ContinueWith(_ => gate.Release(), TaskScheduler.Default); // dispatch (not awaited) => parallelism
-}
+    MaxDegreeOfParallelism = opts.MaxInFlight,   // the concurrency ceiling
+    CancellationToken = ct,
+};
 
-async Task HandleAsync(NatsMsg<byte[]> msg, CancellationToken ct)
-{
-    using var _ = timeoutCts(ct, opts.PerRequestTimeout);     // per-request deadline
-    var request = NatsAuthorizationRequest.Decode(msg.Data);  // NATS.Jwt
-    var decision = await pipeline.ResolveAsync(request, activeConfig.Current, ct);
-
-    var responseJwt = decision switch
+await Parallel.ForEachAsync(
+    nc.SubscribeAsync<byte[]>("$SYS.REQ.USER.AUTH", queueGroup: "auth-callout", cancellationToken: ct),
+    parallelOpts,
+    async (msg, token) =>
     {
-        Grant g  => minter.MintUserJwt(g, request.UserNKey, issuerSeed),   // NATS.Jwt + NKeys
-        Deny d   => minter.MintDenial(request, d.Reason),
-    };
+        using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        reqCts.CancelAfter(opts.PerRequestTimeout);            // per-request deadline
 
-    await msg.ReplyAsync(responseJwt, cancellationToken: ct);  // signed authorization response
-    _ = events.EmitAsync(decision);                            // best-effort, off critical path
-}
+        var request = NatsAuthorizationRequest.Decode(msg.Data);   // NATS.Jwt
+        var decision = await pipeline.ResolveAsync(request, activeConfig.Current, reqCts.Token);
+
+        var responseJwt = decision switch
+        {
+            Grant g => minter.MintUserJwt(g, request.UserNKey, issuerSeed),   // NATS.Jwt + NKeys
+            Deny d  => minter.MintDenial(request, d.Reason),
+        };
+
+        await msg.ReplyAsync(responseJwt, cancellationToken: reqCts.Token);   // signed response
+        _ = events.EmitAsync(decision);                            // best-effort, off critical path
+    });
 ```
 
 The minter signs both the user JWT and the authorization response with the issuer signing seed (loaded once from a `SecretRef`, [05](./05-runtime-and-lifecycle.md)).
 
 ## In-process parallelism and backpressure
 
-Scale-out (more instances, [Multiple instances](#multiple-instances-ha-and-exactly-once-handling)) is one axis; before adding pods, a single instance should use its cores. `SubscribeAsync<byte[]>(...)` returns an `IAsyncEnumerable` backed by an internal channel, and the `await foreach` pulls messages on a **single reader loop**. If that loop `await`s each handler inline, requests are processed **serially**: the next message isn't pulled until the current reply is sent, so one slow validation (a JWKS refresh, a KV write) blocks unrelated connects.
+Scale-out (more instances, [Multiple instances](#multiple-instances-ha-and-exactly-once-handling)) is one axis; before adding pods, a single instance should use its cores. `SubscribeAsync<byte[]>(...)` returns an `IAsyncEnumerable` backed by an internal bounded channel. A plain `await foreach` that `await`s each handler inline processes requests **serially**: the next message isn't pulled until the current reply is sent, so one slow validation (a JWKS refresh, a KV write) blocks unrelated connects.
 
-**Parallelism comes from not awaiting the handler.** The reader loop dispatches each request to a handler task and loops immediately, so the next message is pulled while previous handlers are still running. The work is per-request independent and mostly async I/O (KV writes, the occasional JWKS fetch) plus some CPU (signature verify, JWT mint), so it overlaps cleanly. The reader loop itself only does cheap work (take a slot, dispatch), so it keeps draining the subscription.
+**Decision: `Parallel.ForEachAsync` over the subscription.** This is the pattern the official NATS.NET "concurrent message processing" example uses, and it is preferred over a hand-rolled `SemaphoreSlim` + fire-and-forget: it drives the `IAsyncEnumerable` directly, runs handlers concurrently, bounds concurrency with `MaxDegreeOfParallelism`, propagates cancellation, and awaits all in-flight work on shutdown (no orphaned fire-and-forget tasks, no manual `Release()` in a `finally`). The work is per-request independent and mostly async I/O (KV writes, the occasional JWKS fetch) plus some CPU (signature verify, JWT mint), so it overlaps cleanly.
 
-**The bound is a separate concern.** Unbounded fire-and-forget would spawn a task per request under a connect storm (memory blowup, thread-pool starvation, hammering the IdP/KV). So concurrency is **capped** — with a `SemaphoreSlim` of size `MaxInFlight`, or equivalently a bounded `System.Threading.Channels` channel drained by a fixed set of `MaxInFlight` worker tasks. The semaphore does not create parallelism (the dispatch does); it is the ceiling. When all slots are busy the reader loop blocks acquiring one, stops pulling, and requests back up in the subscription's internal buffer (backpressure) and eventually shed:
-
-- **`MaxInFlight`** — max auth requests processed at once per instance (default sized to cores and expected IdP/KV latency, e.g. 32–128). At capacity, new requests wait for a slot; if the wait would exceed the server's callout `timeout` the instance simply doesn't reply in time and the client retries, which is the correct fail-closed load-shedding.
-- **`PerRequestTimeout`** — a hard per-request deadline (below the server's `authorization.timeout`) so a single stuck request (e.g. a hung JWKS fetch that slipped past the [cache manager](#jwks-cache-manager-keeping-the-idp-off-the-hot-path)) releases its slot instead of leaking.
+- **`MaxInFlight`** (`MaxDegreeOfParallelism`) — max auth requests processed at once per instance (default sized to cores and expected IdP/KV latency, e.g. 32–128). At capacity `Parallel.ForEachAsync` stops pulling new messages, so requests back up in the subscription's bounded channel (backpressure) and, once it fills, shed. If a request waits past the server's callout `timeout` the instance simply doesn't reply in time and the client retries, the correct fail-closed load-shedding.
+- **`PerRequestTimeout`** — a linked `CancellationTokenSource.CancelAfter` per request (below the server's `authorization.timeout`) so a single stuck request (e.g. a hung JWKS fetch that slipped past the [cache manager](#jwks-cache-manager-keeping-the-idp-off-the-hot-path)) is cancelled instead of holding a slot.
 - **Ordering doesn't matter.** Each auth request is independent and carries its own one-time `user_nkey`, so out-of-order completion is fine (NATS queue subscriptions already don't guarantee ordering across handlers).
 
 Two knobs, one prerequisite:
 
 - The decision core (`ResolutionPipeline` and everything under `AuthCallout.Core`) must be **thread-safe and stateless** per request: it reads the immutable active-config snapshot (swapped by reference, [Config reload](#config-reload--in-memory-swap)) and shared caches (JWKS via `ConfigurationManager`, which is concurrency-safe), and writes nothing shared. This is already the design's "Decision components contain no transport or storage code" property, so parallel handlers need no locks on the hot path.
-- The single NATS connection is safe for concurrent publish/reply; `NatsConnection` multiplexes. If reply throughput ever becomes the bottleneck, add more connections, but one is expected to suffice.
+- The single NATS connection is safe for concurrent publish/reply; `NatsConnection` multiplexes. If reply throughput ever becomes the bottleneck, add more connections or more instances, but one is expected to suffice.
+
+Alternative if finer control is needed: a bounded `System.Threading.Channels` channel written by the subscription loop and drained by a fixed set of `MaxInFlight` worker tasks. `Parallel.ForEachAsync` is the default because it is less code and handles cancellation and drain for us; the channel variant is only warranted if the accept queue needs to be observed or sized independently of the parallelism degree (`concurrency.queueCapacity`).
 
 | Setting | Scope | Meaning |
 |---------|-------|---------|
