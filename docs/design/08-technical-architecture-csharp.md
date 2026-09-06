@@ -100,8 +100,9 @@ deploy/
 ## Auth callout implementation shape
 
 ```csharp
-// CalloutResponder — Serving state only
-await foreach (var msg in nc.SubscribeAsync<byte[]>("$SYS.REQ.USER.AUTH", cancellationToken: ct))
+// CalloutResponder — Serving state only. Queue group => one instance handles each request.
+await foreach (var msg in nc.SubscribeAsync<byte[]>(
+        "$SYS.REQ.USER.AUTH", queueGroup: "auth-callout", cancellationToken: ct))
 {
     var request = NatsAuthorizationRequest.Decode(msg.Data);      // NATS.Jwt
     var decision = await pipeline.ResolveAsync(request, activeConfig.Current, ct);
@@ -118,6 +119,29 @@ await foreach (var msg in nc.SubscribeAsync<byte[]>("$SYS.REQ.USER.AUTH", cancel
 ```
 
 The minter signs both the user JWT and the authorization response with the issuer signing seed (loaded once from a `SecretRef`, [05](./05-runtime-and-lifecycle.md)).
+
+## Multiple instances (HA and exactly-once handling)
+
+The NATS docs call the auth service a single point of failure and explicitly recommend running **more than one instance** so a slow or dead one can't stall logins. Auth callout is a **request/reply** exchange: the server publishes each connection attempt to `$SYS.REQ.USER.AUTH` and waits for a signed reply within the server's `authorization.timeout` (default 2s).
+
+**Problem with a plain subscription:** every instance is subscribed to the same subject, so a plain (non-queue) subscription delivers **every** request to **every** instance. They would all validate and all reply; the server accepts the first valid reply and discards the rest. That is wasted work, duplicate KV writes, and duplicate events.
+
+**Decision: queue-group subscription.** All instances subscribe to `$SYS.REQ.USER.AUTH` with the **same queue group** name (e.g. `auth-callout`). NATS then delivers each request to **exactly one** member of the group and load-balances across them, with no coordination between instances and no code changes to scale. This is the standard NATS horizontal-scaling pattern (`SubscribeAsync(..., queueGroup: "auth-callout")`).
+
+Why exactly-once handling is correct here, not just efficient:
+
+- **One responder per request.** The queue group guarantees a single instance handles and replies to a given connect, so there is one KV identity write ([ADR 0010](../architecture-decision-log/0010-session-jwt-store-in-kv.md)/[0011](../architecture-decision-log/0011-signed-identity-assertion.md)) and one outcome event per authorization, not N.
+- **Identical verdicts regardless of instance.** Every instance signs with the **same issuer account seed**, so whichever member answers, the reply is valid. The request pins a fresh one-time `user_nkey` and the server names the target account from the reply, so there is nothing instance-specific in a verdict.
+- **Failover is automatic.** If the instance that would have received a request is down, the group delivers to another member. A crash mid-request just means no reply and the server times out that one connect (client retries); the next attempt is served by a live member.
+
+Requirements for running N instances:
+
+- **Shared signing material.** All instances load the same issuer seed and the same assertion keyset ([ADR 0014](../architecture-decision-log/0014-key-rotation-orchestration.md)) from their secret sources, so any instance's signature verifies.
+- **Shared xkey (if enabled).** If the callout uses `xkey` encryption on `$SYS.REQ.USER.AUTH`, every instance needs the same xkey seed to decrypt requests.
+- **Same active config.** Each instance runs its own config provider; with the files or CRD source all instances converge on the same applications. Brief per-instance skew during a reload only means two instances might momentarily grant slightly different configs; both are valid, and new connections settle once all instances see the new config ([05](./05-runtime-and-lifecycle.md) new-connections-only semantics).
+- **Each instance is its own `auth-svc` connection** in the dedicated auth account, authenticated by the service user seed and exempt via `auth_users`.
+
+KV writes are keyed by a per-connection generated id, so even in the rare double-handle edge (e.g. a redelivery) writes are last-writer-wins on distinct keys and events are best-effort at-most-once-per-decision, so duplicates are harmless.
 
 ## Health & readiness
 
@@ -279,8 +303,7 @@ These are not in [01](./01-overview.md)–[07](./07-kv-storage.md) and should be
 1. **Watch-loss = fail-closed semantics.** [05](./05-runtime-and-lifecycle.md) covers bad config, not a silently dead k8s watch or lost NATS connection. Define: lost NATS connection → stop answering (already implied); dead config watch → keep last-good but alert, with a staleness bound.
 2. **Concurrency / backpressure.** Auth callout is on the client connect path. Define max in-flight auth requests and a per-request timeout (bounded channel). The JWKS side is largely handled by the [JWKS cache manager](#jwks-cache-manager-keeping-the-idp-off-the-hot-path) (prewarm + proactive refresh + single-flight + fetch timeout); what remains is the overall request concurrency cap.
 3. **Clock skew / token validation params.** `ClockSkew`, allowed algorithms (reject `none`/HS* when expecting RS/ES), `ValidateAudience` defaults per [04](./04-configuration.md). Make these explicit.
-4. **Multi-instance behavior.** Cluster-wide CRD watch + label selector implies multiple instances can share a cluster. Confirm: are two instances answering the same callout account HA/active-active, and is that safe (idempotent KV writes, duplicate events)? Events stream is best-effort so duplicates are OK; confirm KV writes are last-writer-wins safe.
-5. **Local dev / no-k8s story.** Files source + a `docker-compose` with `nats-server -js` + Keycloak for a full loop, so the decision core is runnable without a cluster.
+4. **Local dev / no-k8s story.** Files source + a `docker-compose` with `nats-server -js` + Keycloak for a full loop, so the decision core is runnable without a cluster.
 
 ## Validation / feedback loop for the rewrite
 
