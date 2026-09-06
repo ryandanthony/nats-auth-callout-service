@@ -104,7 +104,7 @@ deploy/
 // Parallel.ForEachAsync processes requests concurrently within the instance (bounded).
 var parallelOpts = new ParallelOptions
 {
-    MaxDegreeOfParallelism = opts.MaxInFlight,   // the concurrency ceiling
+    MaxDegreeOfParallelism = opts.MaxDegreeOfParallelism,   // the concurrency ceiling
     CancellationToken = ct,
 };
 
@@ -138,7 +138,7 @@ Scale-out (more instances, [Multiple instances](#multiple-instances-ha-and-exact
 
 **Decision: `Parallel.ForEachAsync` over the subscription.** This is the pattern the official NATS.NET "concurrent message processing" example uses, and it is preferred over a hand-rolled `SemaphoreSlim` + fire-and-forget: it drives the `IAsyncEnumerable` directly, runs handlers concurrently, bounds concurrency with `MaxDegreeOfParallelism`, propagates cancellation, and awaits all in-flight work on shutdown (no orphaned fire-and-forget tasks, no manual `Release()` in a `finally`). The work is per-request independent and mostly async I/O (KV writes, the occasional JWKS fetch) plus some CPU (signature verify, JWT mint), so it overlaps cleanly.
 
-- **`MaxInFlight`** (`MaxDegreeOfParallelism`) — max auth requests processed at once per instance (default sized to cores and expected IdP/KV latency, e.g. 32–128). At capacity `Parallel.ForEachAsync` stops pulling new messages, so requests back up in the subscription's bounded channel (backpressure) and, once it fills, shed. If a request waits past the server's callout `timeout` the instance simply doesn't reply in time and the client retries, the correct fail-closed load-shedding.
+- **`MaxDegreeOfParallelism`** — max auth requests processed at once per instance (default sized to cores and expected IdP/KV latency, e.g. 32–128). At capacity `Parallel.ForEachAsync` stops pulling new messages, so requests back up in the subscription's bounded channel (backpressure) and, once it fills, shed. If a request waits past the server's callout `timeout` the instance simply doesn't reply in time and the client retries, the correct fail-closed load-shedding.
 - **`PerRequestTimeout`** — a linked `CancellationTokenSource.CancelAfter` per request (below the server's `authorization.timeout`) so a single stuck request (e.g. a hung JWKS fetch that slipped past the [cache manager](#jwks-cache-manager-keeping-the-idp-off-the-hot-path)) is cancelled instead of holding a slot.
 - **Ordering doesn't matter.** Each auth request is independent and carries its own one-time `user_nkey`, so out-of-order completion is fine (NATS queue subscriptions already don't guarantee ordering across handlers).
 
@@ -147,15 +147,15 @@ Two knobs, one prerequisite:
 - The decision core (`ResolutionPipeline` and everything under `AuthCallout.Core`) must be **thread-safe and stateless** per request: it reads the immutable active-config snapshot (swapped by reference, [Config reload](#config-reload--in-memory-swap)) and shared caches (JWKS via `ConfigurationManager`, which is concurrency-safe), and writes nothing shared. This is already the design's "Decision components contain no transport or storage code" property, so parallel handlers need no locks on the hot path.
 - The single NATS connection is safe for concurrent publish/reply; `NatsConnection` multiplexes. If reply throughput ever becomes the bottleneck, add more connections or more instances, but one is expected to suffice.
 
-Alternative if finer control is needed: a bounded `System.Threading.Channels` channel written by the subscription loop and drained by a fixed set of `MaxInFlight` worker tasks. `Parallel.ForEachAsync` is the default because it is less code and handles cancellation and drain for us; the channel variant is only warranted if the accept queue needs to be observed or sized independently of the parallelism degree (`concurrency.queueCapacity`).
+Alternative if finer control is needed: a bounded `System.Threading.Channels` channel written by the subscription loop and drained by a fixed set of `MaxDegreeOfParallelism` worker tasks. `Parallel.ForEachAsync` is the default because it is less code and handles cancellation and drain for us; the channel variant is only warranted if the accept queue needs to be observed or sized independently of the parallelism degree (`concurrency.queueCapacity`).
 
 | Setting | Scope | Meaning |
 |---------|-------|---------|
-| `concurrency.maxInFlight` | bootstrap | Max auth requests processed in parallel per instance. |
+| `concurrency.maxDegreeOfParallelism` | bootstrap | Max auth requests processed in parallel per instance. |
 | `concurrency.perRequestTimeout` | bootstrap | Per-request deadline; keep below the server's callout `timeout`. |
 | `concurrency.queueCapacity` | bootstrap (optional) | If using a bounded channel, the accept queue depth before shedding. |
 
-Guidance: raise `maxInFlight` to use an instance's cores and absorb latency spikes first; scale out to more instances when a single instance is CPU-saturated or you need failure-domain redundancy. Metrics (in-flight gauge, queue depth, per-request latency, shed count) tell you which limit you're hitting.
+Guidance: raise `maxDegreeOfParallelism` to use an instance's cores and absorb latency spikes first; scale out to more instances when a single instance is CPU-saturated or you need failure-domain redundancy. Metrics (in-flight gauge, queue depth, per-request latency, shed count) tell you which limit you're hitting.
 
 ## Multiple instances (HA and exactly-once handling)
 

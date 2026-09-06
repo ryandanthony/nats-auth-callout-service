@@ -183,7 +183,7 @@ jwks:                                # JWKS cache manager (doc 08)
   fetchTimeout: 5s                   # hard timeout on any single discovery/JWKS fetch (fail closed)
   prewarmRequired: true              # all issuers must warm before Serving
 concurrency:                         # in-process parallelism (doc 08)
-  maxInFlight: 64                    # max auth requests processed in parallel per instance
+  maxDegreeOfParallelism: 64         # max auth requests processed in parallel per instance
   perRequestTimeout: 1500ms          # per-request deadline; keep below server callout timeout
   queueCapacity: 256                 # optional accept-queue depth before shedding
 anonymous:
