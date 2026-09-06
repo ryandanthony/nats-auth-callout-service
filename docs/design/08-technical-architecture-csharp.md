@@ -262,6 +262,30 @@ The manager reuses `Microsoft.IdentityModel`'s `ConfigurationManager<OpenIdConne
 - A `jwks` component health check ([Health & readiness](#health--readiness)) reports per-issuer freshness: `Healthy` when every issuer refreshed within its interval, `Degraded` on a stale-but-usable cache (last good keys still cached), `Unhealthy` only if an issuer has no usable keys at all.
 - Metrics: JWKS fetches (proactive vs on-demand), fetch failures, cache age per issuer, single-flight collapses. These make an IdP problem visible before it denies a connect.
 
+## Token validation
+
+The `TokenValidator` builds `TokenValidationParameters` per issuer with strict, fail-closed settings, decided in [ADR 0016](../architecture-decision-log/0016-token-validation-parameters.md). The `Microsoft.IdentityModel` defaults are tuned for lenient interop and must be overridden.
+
+- **`ClockSkew` = 60s** (not the framework's 5-minute default), capped at 300s at config load. Covers NTP drift only.
+- **Asymmetric algorithms only.** `ValidAlgorithms` defaults to `RS*`/`ES*`/`PS*`; `HS*` and `none` are rejected at config load, not merely defaulted off. Accepting HMAC while keys come from JWKS is the algorithm-confusion attack (public key used as the HMAC secret).
+- **`ValidateIssuer` / `ValidateLifetime` / `RequireSignedTokens` / `RequireExpirationTime` = true**, non-configurable. `ValidIssuer` is pinned to the discovery document's `issuer`.
+- **`ValidateAudience` defaults true**; when true, `audience` is required (config-load error otherwise). `false` is a deliberate, documented opt-out.
+- **Keys only from cached JWKS** by `kid`; embedded `jwk`/`x5c`/`jku` header keys are ignored; unknown `kid` fails closed and triggers a single-flight refresh ([JWKS cache manager](#jwks-cache-manager-keeping-the-idp-off-the-hot-path)).
+
+These parameters are set at the **issuer** level only ([04](./04-configuration.md) / [09](./09-schemas-and-versioning.md)); no profile can weaken them.
+
+```csharp
+var tvp = new TokenValidationParameters
+{
+    ValidateIssuer = true,   ValidIssuer = discovery.Issuer,
+    ValidateAudience = issuer.ValidateAudience,   ValidAudiences = issuer.Audience,
+    ValidateLifetime = true, ClockSkew = TimeSpan.FromSeconds(issuer.ClockSkewSeconds), // default 60
+    RequireSignedTokens = true, RequireExpirationTime = true,
+    ValidAlgorithms = issuer.AllowedAlgorithms,   // asymmetric set; HS*/none impossible per ADR 0016
+    IssuerSigningKeys = jwks.CurrentKeys(issuer),  // from the cache manager, by kid
+};
+```
+
 ## KV / identity stores (maps [07](./07-kv-storage.md) to NATS.Net KV)
 
 ```csharp
@@ -430,7 +454,6 @@ dev/
 These are not in [01](./01-overview.md)–[07](./07-kv-storage.md) and should be decided before or during the rewrite:
 
 1. **Watch-loss = fail-closed semantics.** [05](./05-runtime-and-lifecycle.md) covers bad config, not a silently dead k8s watch or lost NATS connection. Define: lost NATS connection → stop answering (already implied); dead config watch → keep last-good but alert, with a staleness bound.
-2. **Clock skew / token validation params.** `ClockSkew`, allowed algorithms (reject `none`/HS* when expecting RS/ES), `ValidateAudience` defaults per [04](./04-configuration.md). Make these explicit.
 
 ## Validation / feedback loop for the rewrite
 

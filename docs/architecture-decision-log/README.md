@@ -23,3 +23,4 @@ The [design](../design/README.md) unifies these ADRs into a cohesive, language-a
 | [0013](./0013-kv-bucket-naming-contract.md) | KV bucket naming contract | proposed |
 | [0014](./0014-key-rotation-orchestration.md) | Key rotation orchestration | proposed |
 | [0015](./0015-schema-versioning-strategy.md) | Schema versioning strategy | proposed |
+| [0016](./0016-token-validation-parameters.md) | Token validation parameters | proposed |

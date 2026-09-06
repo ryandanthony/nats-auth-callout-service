@@ -117,8 +117,10 @@ issuer:
   jwksUri: null                   # optional override; else OIDC discovery
   jwksCacheSeconds: 300
   refreshIntervalSeconds: null    # optional; overrides bootstrap jwks.refreshInterval
-  validateAudience: true
-  audience: nats
+  validateAudience: true          # default true; if true, audience is required (ADR 0016)
+  audience: [nats]                # one or more accepted audiences
+  clockSkewSeconds: 60            # default 60, capped at 300 (ADR 0016)
+  allowedAlgorithms: [RS256, ES256]  # asymmetric only; HS*/none rejected at load (ADR 0016)
 match:                            # optional app selector among same-issuer apps
   azp: [notes-web]
 identityPropagation:
@@ -219,7 +221,9 @@ spec:
     authority: https://id.ants.zone/realms/main
     jwksCacheSeconds: 300
     validateAudience: true
-    audience: nats
+    audience: [nats]
+    clockSkewSeconds: 60
+    allowedAlgorithms: [RS256, ES256]
   match:
     azp: [notes-web]
   identityPropagation:

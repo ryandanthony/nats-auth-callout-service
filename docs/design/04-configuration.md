@@ -79,7 +79,7 @@ The single shape the core consumes. Language-agnostic field view:
 
 - `name` (unique across the aggregate)
 - `targetAccount`
-- `issuer`: `{ authority, jwksUri?, jwksCacheSeconds, refreshIntervalSeconds?, validateAudience, audience? }` — `jwksUri` is an optional override; otherwise it is resolved from the provider's OIDC discovery document (`{authority}/.well-known/openid-configuration`), so no provider-specific URL layout is assumed. `refreshIntervalSeconds` optionally overrides the bootstrap `jwks.refreshInterval` for this issuer.
+- `issuer`: `{ authority, jwksUri?, jwksCacheSeconds, refreshIntervalSeconds?, validateAudience, audience?, clockSkewSeconds?, allowedAlgorithms? }` — `jwksUri` is an optional override; otherwise it is resolved from the provider's OIDC discovery document (`{authority}/.well-known/openid-configuration`), so no provider-specific URL layout is assumed. `refreshIntervalSeconds` optionally overrides the bootstrap `jwks.refreshInterval` for this issuer. `clockSkewSeconds` (default 60, capped), `allowedAlgorithms` (asymmetric only; `HS*`/`none` rejected), and `validateAudience`/`audience` defaults are defined in [ADR 0016](../architecture-decision-log/0016-token-validation-parameters.md).
 - `match?: ClaimMatch` (app selector among same-issuer candidates)
 - `anonymousProfile?: Grant` (contribution to the anonymous union)
 - `profiles: Profile[]` (ordered)
