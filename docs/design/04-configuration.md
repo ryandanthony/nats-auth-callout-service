@@ -68,6 +68,7 @@ The single shape the core consumes. Language-agnostic field view:
 - `assertionKeys: AssertionKey[]?` (signs identity assertions; a keyset with exactly one `active`, the rest verify-only, ADR 0011 / ADR 0014). Each: `{ kid, key: SecretRef, active }`.
 - `source`: which provider + its settings (directory path, CRD selector, or DB connection)
 - `jwks`: `{ refreshInterval, fetchTimeout, prewarmRequired }` (JWKS cache manager settings; the manager prewarms all issuers before Serving and proactively refreshes on `refreshInterval`, doc 08)
+- `concurrency`: `{ maxInFlight, perRequestTimeout, queueCapacity? }` (in-process parallelism and backpressure; bounded worker pool per instance, doc 08)
 - `anonymous`: `{ targetAccount, expirySeconds, events?: EventSubjects }`
 
 **Routing aggregate**

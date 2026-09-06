@@ -100,11 +100,20 @@ deploy/
 ## Auth callout implementation shape
 
 ```csharp
-// CalloutResponder — Serving state only. Queue group => one instance handles each request.
+// CalloutResponder — Serving state only. Queue group => one instance handles each request;
+// a bounded worker pool processes requests in parallel within the instance.
+var gate = new SemaphoreSlim(opts.MaxInFlight);               // e.g. 64
 await foreach (var msg in nc.SubscribeAsync<byte[]>(
         "$SYS.REQ.USER.AUTH", queueGroup: "auth-callout", cancellationToken: ct))
 {
-    var request = NatsAuthorizationRequest.Decode(msg.Data);      // NATS.Jwt
+    await gate.WaitAsync(ct);                                 // backpressure: cap concurrent work
+    _ = HandleAsync(msg, ct).ContinueWith(_ => gate.Release(), TaskScheduler.Default);
+}
+
+async Task HandleAsync(NatsMsg<byte[]> msg, CancellationToken ct)
+{
+    using var _ = timeoutCts(ct, opts.PerRequestTimeout);     // per-request deadline
+    var request = NatsAuthorizationRequest.Decode(msg.Data);  // NATS.Jwt
     var decision = await pipeline.ResolveAsync(request, activeConfig.Current, ct);
 
     var responseJwt = decision switch
@@ -113,12 +122,35 @@ await foreach (var msg in nc.SubscribeAsync<byte[]>(
         Deny d   => minter.MintDenial(request, d.Reason),
     };
 
-    await msg.ReplyAsync(responseJwt, cancellationToken: ct);      // signed authorization response
-    _ = events.EmitAsync(decision);                               // best-effort, off critical path
+    await msg.ReplyAsync(responseJwt, cancellationToken: ct);  // signed authorization response
+    _ = events.EmitAsync(decision);                            // best-effort, off critical path
 }
 ```
 
 The minter signs both the user JWT and the authorization response with the issuer signing seed (loaded once from a `SecretRef`, [05](./05-runtime-and-lifecycle.md)).
+
+## In-process parallelism and backpressure
+
+Scale-out (more instances, [Multiple instances](#multiple-instances-ha-and-exactly-once-handling)) is one axis; before adding pods, a single instance should use its cores. A naive `await foreach` that awaits each handler **serializes** requests: the next request isn't read until the current reply is sent, so one slow validation (a JWKS refresh, a KV write) blocks unrelated connects. Because the work is per-request independent and mostly async I/O (KV writes, the occasional JWKS fetch) plus some CPU (signature verify, JWT mint), it parallelizes cleanly.
+
+**Decision: a bounded worker pool.** Dispatch each received request to a handler task and cap concurrency with a `SemaphoreSlim` (or a bounded `System.Threading.Channels` channel + a fixed set of consumer tasks). The cap is the backpressure control the concurrency gap called for:
+
+- **`MaxInFlight`** — max auth requests being processed at once per instance (default sized to cores and expected IdP/KV latency, e.g. 32–128). Reached capacity means new requests wait for a slot; if the wait would exceed the server's callout `timeout` the instance simply doesn't reply in time and the client retries, which is the correct fail-closed load-shedding.
+- **`PerRequestTimeout`** — a hard per-request deadline (below the server's `authorization.timeout`) so a single stuck request (e.g. a hung JWKS fetch that slipped past the [cache manager](#jwks-cache-manager-keeping-the-idp-off-the-hot-path)) releases its slot instead of leaking.
+- **Ordering doesn't matter.** Each auth request is independent and carries its own one-time `user_nkey`, so out-of-order completion is fine (NATS queue subscriptions already don't guarantee ordering across handlers).
+
+Two knobs, one prerequisite:
+
+- The decision core (`ResolutionPipeline` and everything under `AuthCallout.Core`) must be **thread-safe and stateless** per request: it reads the immutable active-config snapshot (swapped by reference, [Config reload](#config-reload--in-memory-swap)) and shared caches (JWKS via `ConfigurationManager`, which is concurrency-safe), and writes nothing shared. This is already the design's "Decision components contain no transport or storage code" property, so parallel handlers need no locks on the hot path.
+- The single NATS connection is safe for concurrent publish/reply; `NatsConnection` multiplexes. If reply throughput ever becomes the bottleneck, add more connections, but one is expected to suffice.
+
+| Setting | Scope | Meaning |
+|---------|-------|---------|
+| `concurrency.maxInFlight` | bootstrap | Max auth requests processed in parallel per instance. |
+| `concurrency.perRequestTimeout` | bootstrap | Per-request deadline; keep below the server's callout `timeout`. |
+| `concurrency.queueCapacity` | bootstrap (optional) | If using a bounded channel, the accept queue depth before shedding. |
+
+Guidance: raise `maxInFlight` to use an instance's cores and absorb latency spikes first; scale out to more instances when a single instance is CPU-saturated or you need failure-domain redundancy. Metrics (in-flight gauge, queue depth, per-request latency, shed count) tell you which limit you're hitting.
 
 ## Multiple instances (HA and exactly-once handling)
 
@@ -301,9 +333,8 @@ ENTRYPOINT ["./AuthCallout.Host"]
 These are not in [01](./01-overview.md)–[07](./07-kv-storage.md) and should be decided before or during the rewrite:
 
 1. **Watch-loss = fail-closed semantics.** [05](./05-runtime-and-lifecycle.md) covers bad config, not a silently dead k8s watch or lost NATS connection. Define: lost NATS connection → stop answering (already implied); dead config watch → keep last-good but alert, with a staleness bound.
-2. **Concurrency / backpressure.** Auth callout is on the client connect path. Define max in-flight auth requests and a per-request timeout (bounded channel). The JWKS side is largely handled by the [JWKS cache manager](#jwks-cache-manager-keeping-the-idp-off-the-hot-path) (prewarm + proactive refresh + single-flight + fetch timeout); what remains is the overall request concurrency cap.
-3. **Clock skew / token validation params.** `ClockSkew`, allowed algorithms (reject `none`/HS* when expecting RS/ES), `ValidateAudience` defaults per [04](./04-configuration.md). Make these explicit.
-4. **Local dev / no-k8s story.** Files source + a `docker-compose` with `nats-server -js` + Keycloak for a full loop, so the decision core is runnable without a cluster.
+2. **Clock skew / token validation params.** `ClockSkew`, allowed algorithms (reject `none`/HS* when expecting RS/ES), `ValidateAudience` defaults per [04](./04-configuration.md). Make these explicit.
+3. **Local dev / no-k8s story.** Files source + a `docker-compose` with `nats-server -js` + Keycloak for a full loop, so the decision core is runnable without a cluster.
 
 ## Validation / feedback loop for the rewrite
 
