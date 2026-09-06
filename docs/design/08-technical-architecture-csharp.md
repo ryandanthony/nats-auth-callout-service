@@ -161,7 +161,7 @@ Active config is a single immutable snapshot behind a `volatile` reference (or `
 
 These are not in [01](./01-overview.md)–[07](./07-kv-storage.md) and should be decided before or during the rewrite:
 
-1. **KV bucket naming contract.** Dotted subjects can't be bucket names; the slug→bucket mapping is a consumer-facing interface. Document it as an ADR.
+1. **KV bucket naming contract.** Dotted subjects can't be bucket names; the slug→bucket mapping is a consumer-facing interface. Defined in [ADR 0013](../architecture-decision-log/0013-kv-bucket-naming-contract.md).
 2. **Health & readiness.** The service has no HTTP surface, but k8s wants liveness/readiness. Add a minimal `/healthz` `/readyz` (map `readyz` to the `Serving` state) via `Microsoft.Extensions.Diagnostics.HealthChecks`, or a NATS-based health check. Not covered by current design.
 3. **Watch-loss = fail-closed semantics.** [05](./05-runtime-and-lifecycle.md) covers bad config, not a silently dead k8s watch or lost NATS connection. Define: lost NATS connection → stop answering (already implied); dead config watch → keep last-good but alert, with a staleness bound.
 4. **Concurrency / backpressure.** Auth callout is on the client connect path. Define max in-flight auth requests, per-request timeout, and JWKS-fetch timeout so a slow IdP can't stall connects. Polly + bounded channel.
