@@ -30,6 +30,7 @@ Concrete technology mapping for the rewrite. The language-agnostic design in [01
 | Health | Health checks + minimal API | `Microsoft.Extensions.Diagnostics.HealthChecks`, ASP.NET Core minimal APIs | Tagged component checks mapped to startup/live/ready probes with a JSON response writer (see [Health & readiness](#health--readiness)). |
 | Resilience | Polly | `Microsoft.Extensions.Http.Resilience` / `Polly` | JWKS fetch retry/timeout, k8s watch reconnect backoff. |
 | Tests | xUnit + Testcontainers | `xUnit`, `Testcontainers`, `NSubstitute` | Decision layer unit-tested in isolation; integration against real `nats-server -js` and a kind/k3s CRD via Testcontainers. |
+| Local dev | .NET Aspire | `Aspire.Hosting`, `Aspire.Hosting.Nats`, `CommunityToolkit.Aspire.Hosting.K3s`, `Aspire.Hosting.Keycloak` | Two AppHosts (external NATS + files; K3s + CRD) and two sample apps (see [Local development](#local-development-net-aspire)). |
 
 ### Why NATS.Net over the legacy client
 
@@ -93,6 +94,10 @@ tests/
 deploy/
   crd/                         # CustomResourceDefinition + RBAC (ClusterRole/Binding)
   helm/ or kustomize/
+dev/
+  AppHost.Local/               # Aspire: files source + external NATS + Keycloak
+  AppHost.K8s/                 # Aspire: K3s cluster + CRD source
+  samples/{NoteService,TaskService}/   # two sample apps (see Local development)
 ```
 
 `AuthCallout.Core` and `AuthCallout.Contracts` reference no transport, storage, or k8s packages, so the whole authorization model is exercisable in isolation (matches the design's "Decision components contain no transport or storage code").
@@ -333,13 +338,99 @@ ENTRYPOINT ["./AuthCallout.Host"]
 - **SBOM + attestation**: emit an SBOM (`docker buildx ... --sbom=true` or Syft) and attach it as a cosign attestation, alongside SLSA build provenance (`--provenance=true` on buildx). Deploys can then `cosign verify-attestation` before rollout.
 - Sign the **digest**, not a mutable tag, so `latest`/version tags can move without invalidating the signature.
 
+## Local development (.NET Aspire)
+
+Two [Aspire](https://aspire.dev) AppHosts give a full local loop without hand-written compose files, and two tiny sample services (`Note` and `Task`) exercise both config sources and both connection styles. Aspire also gives the OpenTelemetry dashboard for free, so traces/metrics/logs from the callout and the samples are visible while iterating.
+
+### Sample applications
+
+- **`Note` service** — an app that publishes/subscribes on `notes.>`, connecting with an OIDC token so it hits the callout and lands on a `Note` application profile. Enables identity propagation, so it also exercises the assertion/token KV path ([07](./07-kv-storage.md)).
+- **`Task` service** — a second, independent application on `tasks.>`, with a different issuer `match` and a service profile that uses `autoAddSessionAccess` to resolve callers. Having two apps proves isolation ([ADR 0001](../architecture-decision-log/0001-named-permission-profiles.md)) and the anonymous union across apps ([ADR 0004](../architecture-decision-log/0004-anonymous-grant-is-union-across-apps.md)).
+
+Both are thin: connect, publish/subscribe a couple of subjects, and log the verdict. They double as the manual end-to-end check and the seed for the integration tests.
+
+### AppHost 1 — `AppHost.Local` (files source, external NATS)
+
+The lightweight loop. A single NATS container with JetStream, reachable from the host so you can also poke it with `nats` CLI, and the callout using the **files** config source (no cluster). This is the day-to-day inner loop.
+
+```csharp
+var builder = DistributedApplication.CreateBuilder(args);
+
+// NATS with JetStream, published to a host port for external CLI/clients.
+var nats = builder.AddNats("nats")
+    .WithJetStream()
+    .WithDataVolume()
+    .WithEndpoint("nats", e => { e.Port = 4222; e.TargetHost = "0.0.0.0"; e.IsExternal = true; });
+
+var keycloak = builder.AddKeycloak("idp").WithDataVolume();   // OIDC issuer for the samples
+
+var callout = builder.AddProject<Projects.AuthCallout_Host>("callout")
+    .WithReference(nats).WaitFor(nats)
+    .WithReference(keycloak).WaitFor(keycloak)
+    .WithEnvironment("Source__Kind", "files")
+    .WithEnvironment("Source__Directory", "./config/apps");   // Note.yaml, Task.yaml live here
+
+builder.AddProject<Projects.NoteService>("note").WithReference(nats).WaitFor(callout);
+builder.AddProject<Projects.TaskService>("task").WithReference(nats).WaitFor(callout);
+
+builder.Build().Run();
+```
+
+- The callout reads `config/apps/Note.yaml` and `config/apps/Task.yaml` (the [doc 09](./09-schemas-and-versioning.md) file schema). Editing a file hot-reloads, so you can watch routing changes live.
+- NATS is external on `4222`, so a developer can connect the samples, the `nats` CLI, or a scratch client from the host, exactly the "connect to it externally and run locally" case.
+
+### AppHost 2 — `AppHost.K8s` (CRD source, local K3s)
+
+The cluster loop, using the [Community Toolkit K3s integration](https://github.com/CommunityToolkit/Aspire) (`AddK3sCluster`) so the **same** binary is exercised through its **Kubernetes CRD** source against a real (lightweight) cluster, no external cluster required.
+
+```csharp
+var builder = DistributedApplication.CreateBuilder(args);
+
+var cluster = builder.AddK3sCluster("k8s")
+    .WithDataVolume()
+    .WithLifetime(ContainerLifetime.Persistent);              // survives AppHost restarts
+
+// CRD + RBAC, then the two apps as AuthApplication custom resources (doc 09 CRD schema).
+var crd  = cluster.AddK8sManifest("crd", "./deploy/crd/authapplication-crd.yaml");
+var apps = cluster.AddK8sManifest("apps", "./deploy/crd/samples")   // Note.yaml, Task.yaml as CRs
+    .WaitForCompletion(crd);
+
+var nats = builder.AddNats("nats").WithJetStream();
+
+var callout = builder.AddProject<Projects.AuthCallout_Host>("callout")
+    .WithReference(nats).WaitFor(nats)
+    .WithReference(cluster)                                   // injects KUBECONFIG automatically
+    .WaitForCompletion(apps)
+    .WithEnvironment("Source__Kind", "k8s");
+
+builder.AddProject<Projects.NoteService>("note").WithReference(nats).WaitFor(callout);
+builder.AddProject<Projects.TaskService>("task").WithReference(nats).WaitFor(callout);
+
+builder.Build().Run();
+```
+
+- `AddK3sCluster` runs K3s in a container and injects `KUBECONFIG` into the callout via `WithReference(cluster)`, so `CrdRoutingProvider` (`KubernetesClient`) watches real CRs. This is the only place the CRD path is exercised locally.
+- `AddK8sManifest` applies the CRD then the two sample `AuthApplication` CRs; `WaitForCompletion` orders them so the callout starts against a populated cluster.
+- Same sample services, same NATS, different config source, which is the point: it proves the files and CRD sources converge on the identical canonical model ([ADR 0007](../architecture-decision-log/0007-internal-configuration-model.md)) end to end, not just in unit tests.
+
+### Layout
+
+```
+dev/
+  AppHost.Local/          # files source + external NATS + Keycloak
+    config/apps/          # Note.yaml, Task.yaml (file schema)
+  AppHost.K8s/            # K3s cluster + CRD source
+  samples/
+    NoteService/
+    TaskService/
+```
+
 ## What you're missing (gaps the language-neutral design leaves open)
 
 These are not in [01](./01-overview.md)–[07](./07-kv-storage.md) and should be decided before or during the rewrite:
 
 1. **Watch-loss = fail-closed semantics.** [05](./05-runtime-and-lifecycle.md) covers bad config, not a silently dead k8s watch or lost NATS connection. Define: lost NATS connection → stop answering (already implied); dead config watch → keep last-good but alert, with a staleness bound.
 2. **Clock skew / token validation params.** `ClockSkew`, allowed algorithms (reject `none`/HS* when expecting RS/ES), `ValidateAudience` defaults per [04](./04-configuration.md). Make these explicit.
-3. **Local dev / no-k8s story.** Files source + a `docker-compose` with `nats-server -js` + Keycloak for a full loop, so the decision core is runnable without a cluster.
 
 ## Validation / feedback loop for the rewrite
 
