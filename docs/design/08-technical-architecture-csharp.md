@@ -62,7 +62,10 @@ flowchart TD
   conn --> listener[CalloutResponder\nSubscribeAsync $SYS.REQ.USER.AUTH]
   listener --> pipe[ResolutionPipeline\npure decision core]
   active --> pipe
-  pipe --> validator[TokenValidator\nConfigurationManager + JWKS]
+  host --> jwksmgr[JwksCacheManager\nprewarm + periodic refresh]
+  active --> jwksmgr
+  jwksmgr --> validator[TokenValidator\nConfigurationManager + JWKS]
+  pipe --> validator
   pipe --> minter[UserJwtMinter\nNATS.Jwt + NKeys]
   minter --> listener
   pipe --> ident[IdentityStoreWriter\nKV: tokens/assertions/keys/discovery]
@@ -80,7 +83,7 @@ src/
   AuthCallout.Core/            # decision core: pipeline, selectors, matcher, minter (no I/O deps)
   AuthCallout.Contracts/       # canonical config model, Grant, ClaimMatch, SecretRef
   AuthCallout.Nats/            # NatsConnectionManager, CalloutResponder, IdentityStoreWriter, EventEmitter
-  AuthCallout.Identity/        # TokenValidator, JwksProvider, AssertionSigner
+  AuthCallout.Identity/        # TokenValidator, JwksProvider, JwksCacheManager, AssertionSigner
   AuthCallout.Config.Files/    # FileRoutingProvider (+ YamlDotNet)
   AuthCallout.Config.K8s/      # CrdRoutingProvider (+ KubernetesClient) — isolated
   AuthCallout.Secrets/         # ISecretResolver + inline/file/k8s/vault impls
@@ -163,6 +166,36 @@ static HealthCheckOptions Filter(string tag, HealthCheckOptions o) =>
 
 The component checks read the same state the `NatsConnectionManager`, config providers, and JWKS provider own, so health can't claim ready while the service answers nothing. The JSON writer emits each check's status, description, duration, and `data` (never secrets). Metrics still flow via the OTLP exporter; the health endpoints are for orchestrator probes and quick human inspection, not scraping.
 
+## JWKS cache manager (keeping the IdP off the hot path)
+
+Token validation is **local**: the `TokenValidator` verifies each JWT's signature against cached JWKS keys plus `exp`/`iss`/`aud`, entirely in-process. The IdP is only contacted on a JWKS **cache miss or refresh** — cold start, the periodic refresh interval, or a token bearing an unknown `kid` after the IdP rotates its signing keys. Those refreshes are the only moments the IdP sits on the client-connect path, and an unannounced IdP rotation is the common one.
+
+To shrink that window, a dedicated **`JwksCacheManager`** hosted service owns keeping every configured issuer's keys warm, rather than letting validation trigger fetches lazily.
+
+- **Prewarm before serving.** The manager runs as an `IHostedService` that must complete its **first** fetch of every configured issuer's discovery + JWKS **before** the service enters `Serving` and subscribes to `$SYS.REQ.USER.AUTH` ([05](./05-runtime-and-lifecycle.md)). The `started` startup health check ([Health & readiness](#health--readiness)) gates on this, so no auth request is ever answered against a cold cache. If an issuer can't be reached at startup the service stays in `Starting`/`Idle` and reports why (fail closed).
+- **Periodic proactive refresh.** The manager re-fetches each issuer's JWKS on a configurable interval so keys are renewed *ahead* of expiry and new rotation keys are picked up before a client presents a token signed with them. This turns most "unknown kid" cache misses into cache hits.
+- **Tracks the issuer set from config.** It subscribes to the active-config snapshot: when an application adds a new issuer the manager prewarms it; when the last app for an issuer is removed it drops it. Issuers are de-duplicated across applications ([04](./04-configuration.md) derived index).
+- **Single-flight on demand.** If a genuinely unknown `kid` still arrives between refreshes, the on-demand fetch it triggers is collapsed per issuer (single-flight) so a burst of new-`kid` tokens after a rotation becomes one IdP call, not N. This fetch is bounded by the JWKS-fetch timeout and fails closed.
+
+### Configuration
+
+The refresh cadence and fetch bounds are bootstrap settings, with a per-issuer override on the application's `issuer` block ([04](./04-configuration.md)):
+
+| Setting | Scope | Meaning |
+|---------|-------|---------|
+| `jwks.refreshInterval` | bootstrap (default, e.g. `5m`) | How frequently the manager proactively re-fetches each issuer's JWKS. |
+| `jwks.refreshIntervalSeconds` | per-issuer override | Overrides the default for a specific issuer (falls back to bootstrap). |
+| `jwks.fetchTimeout` | bootstrap | Hard timeout on any single discovery/JWKS fetch, so a slow IdP fails fast (fail closed). |
+| `jwks.prewarmRequired` | bootstrap (default true) | If true, all issuers must prewarm before `Serving`; if false, prewarm is best-effort and validation may lazily fetch. |
+| `jwksCacheSeconds` | per-issuer ([04](./04-configuration.md)) | Existing cache lifetime; the manager's refresh interval should be ≤ this so keys never expire between refreshes. |
+
+The manager reuses `Microsoft.IdentityModel`'s `ConfigurationManager<OpenIdConnectConfiguration>` per issuer (its `RequestRefresh()` drives proactive updates) rather than reimplementing JWKS handling; the manager only orchestrates *when* refreshes happen and guarantees prewarm ordering. Fetch retries/backoff use Polly.
+
+### Health & observability
+
+- A `jwks` component health check ([Health & readiness](#health--readiness)) reports per-issuer freshness: `Healthy` when every issuer refreshed within its interval, `Degraded` on a stale-but-usable cache (last good keys still cached), `Unhealthy` only if an issuer has no usable keys at all.
+- Metrics: JWKS fetches (proactive vs on-demand), fetch failures, cache age per issuer, single-flight collapses. These make an IdP problem visible before it denies a connect.
+
 ## KV / identity stores (maps [07](./07-kv-storage.md) to NATS.Net KV)
 
 ```csharp
@@ -244,7 +277,7 @@ ENTRYPOINT ["./AuthCallout.Host"]
 These are not in [01](./01-overview.md)–[07](./07-kv-storage.md) and should be decided before or during the rewrite:
 
 1. **Watch-loss = fail-closed semantics.** [05](./05-runtime-and-lifecycle.md) covers bad config, not a silently dead k8s watch or lost NATS connection. Define: lost NATS connection → stop answering (already implied); dead config watch → keep last-good but alert, with a staleness bound.
-2. **Concurrency / backpressure.** Auth callout is on the client connect path. Define max in-flight auth requests, per-request timeout, and JWKS-fetch timeout so a slow IdP can't stall connects. Polly + bounded channel.
+2. **Concurrency / backpressure.** Auth callout is on the client connect path. Define max in-flight auth requests and a per-request timeout (bounded channel). The JWKS side is largely handled by the [JWKS cache manager](#jwks-cache-manager-keeping-the-idp-off-the-hot-path) (prewarm + proactive refresh + single-flight + fetch timeout); what remains is the overall request concurrency cap.
 3. **Clock skew / token validation params.** `ClockSkew`, allowed algorithms (reject `none`/HS* when expecting RS/ES), `ValidateAudience` defaults per [04](./04-configuration.md). Make these explicit.
 4. **Multi-instance behavior.** Cluster-wide CRD watch + label selector implies multiple instances can share a cluster. Confirm: are two instances answering the same callout account HA/active-active, and is that safe (idempotent KV writes, duplicate events)? Events stream is best-effort so duplicates are OK; confirm KV writes are last-writer-wins safe.
 5. **Local dev / no-k8s story.** Files source + a `docker-compose` with `nats-server -js` + Keycloak for a full loop, so the decision core is runnable without a cluster.
