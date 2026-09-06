@@ -1,8 +1,0 @@
-<Project>
-  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
-  <PropertyGroup>
-    <!-- Allow underscores in test method names (MethodName_Scenario_Expected) -->
-    <NoWarn>$(NoWarn);CA1707;CA1001;CA2000</NoWarn>
-    <IsPackable>false</IsPackable>
-  </PropertyGroup>
-</Project>
