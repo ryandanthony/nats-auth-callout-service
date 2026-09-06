@@ -106,8 +106,8 @@ var gate = new SemaphoreSlim(opts.MaxInFlight);               // e.g. 64
 await foreach (var msg in nc.SubscribeAsync<byte[]>(
         "$SYS.REQ.USER.AUTH", queueGroup: "auth-callout", cancellationToken: ct))
 {
-    await gate.WaitAsync(ct);                                 // backpressure: cap concurrent work
-    _ = HandleAsync(msg, ct).ContinueWith(_ => gate.Release(), TaskScheduler.Default);
+    await gate.WaitAsync(ct);                                 // ceiling only: blocks the reader when MaxInFlight are busy
+    _ = HandleAsync(msg, ct).ContinueWith(_ => gate.Release(), TaskScheduler.Default); // dispatch (not awaited) => parallelism
 }
 
 async Task HandleAsync(NatsMsg<byte[]> msg, CancellationToken ct)
@@ -131,11 +131,13 @@ The minter signs both the user JWT and the authorization response with the issue
 
 ## In-process parallelism and backpressure
 
-Scale-out (more instances, [Multiple instances](#multiple-instances-ha-and-exactly-once-handling)) is one axis; before adding pods, a single instance should use its cores. A naive `await foreach` that awaits each handler **serializes** requests: the next request isn't read until the current reply is sent, so one slow validation (a JWKS refresh, a KV write) blocks unrelated connects. Because the work is per-request independent and mostly async I/O (KV writes, the occasional JWKS fetch) plus some CPU (signature verify, JWT mint), it parallelizes cleanly.
+Scale-out (more instances, [Multiple instances](#multiple-instances-ha-and-exactly-once-handling)) is one axis; before adding pods, a single instance should use its cores. `SubscribeAsync<byte[]>(...)` returns an `IAsyncEnumerable` backed by an internal channel, and the `await foreach` pulls messages on a **single reader loop**. If that loop `await`s each handler inline, requests are processed **serially**: the next message isn't pulled until the current reply is sent, so one slow validation (a JWKS refresh, a KV write) blocks unrelated connects.
 
-**Decision: a bounded worker pool.** Dispatch each received request to a handler task and cap concurrency with a `SemaphoreSlim` (or a bounded `System.Threading.Channels` channel + a fixed set of consumer tasks). The cap is the backpressure control the concurrency gap called for:
+**Parallelism comes from not awaiting the handler.** The reader loop dispatches each request to a handler task and loops immediately, so the next message is pulled while previous handlers are still running. The work is per-request independent and mostly async I/O (KV writes, the occasional JWKS fetch) plus some CPU (signature verify, JWT mint), so it overlaps cleanly. The reader loop itself only does cheap work (take a slot, dispatch), so it keeps draining the subscription.
 
-- **`MaxInFlight`** — max auth requests being processed at once per instance (default sized to cores and expected IdP/KV latency, e.g. 32–128). Reached capacity means new requests wait for a slot; if the wait would exceed the server's callout `timeout` the instance simply doesn't reply in time and the client retries, which is the correct fail-closed load-shedding.
+**The bound is a separate concern.** Unbounded fire-and-forget would spawn a task per request under a connect storm (memory blowup, thread-pool starvation, hammering the IdP/KV). So concurrency is **capped** — with a `SemaphoreSlim` of size `MaxInFlight`, or equivalently a bounded `System.Threading.Channels` channel drained by a fixed set of `MaxInFlight` worker tasks. The semaphore does not create parallelism (the dispatch does); it is the ceiling. When all slots are busy the reader loop blocks acquiring one, stops pulling, and requests back up in the subscription's internal buffer (backpressure) and eventually shed:
+
+- **`MaxInFlight`** — max auth requests processed at once per instance (default sized to cores and expected IdP/KV latency, e.g. 32–128). At capacity, new requests wait for a slot; if the wait would exceed the server's callout `timeout` the instance simply doesn't reply in time and the client retries, which is the correct fail-closed load-shedding.
 - **`PerRequestTimeout`** — a hard per-request deadline (below the server's `authorization.timeout`) so a single stuck request (e.g. a hung JWKS fetch that slipped past the [cache manager](#jwks-cache-manager-keeping-the-idp-off-the-hot-path)) releases its slot instead of leaking.
 - **Ordering doesn't matter.** Each auth request is independent and carries its own one-time `user_nkey`, so out-of-order completion is fine (NATS queue subscriptions already don't guarantee ordering across handlers).
 
