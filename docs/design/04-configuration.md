@@ -65,7 +65,7 @@ The single shape the core consumes. Language-agnostic field view:
 - `natsUrl`
 - `issuerSeed: SecretRef`
 - `serviceUserSeed: SecretRef?`
-- `assertionKey: SecretRef?` (signs identity assertions, ADR 0011)
+- `assertionKeys: AssertionKey[]?` (signs identity assertions; a keyset with exactly one `active`, the rest verify-only, ADR 0011 / ADR 0014). Each: `{ kid, key: SecretRef, active }`.
 - `source`: which provider + its settings (directory path, CRD selector, or DB connection)
 - `anonymous`: `{ targetAccount, expirySeconds, events?: EventSubjects }`
 
