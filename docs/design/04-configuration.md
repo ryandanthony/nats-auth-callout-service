@@ -67,6 +67,7 @@ The single shape the core consumes. Language-agnostic field view:
 - `serviceUserSeed: SecretRef?`
 - `assertionKeys: AssertionKey[]?` (signs identity assertions; a keyset with exactly one `active`, the rest verify-only, ADR 0011 / ADR 0014). Each: `{ kid, key: SecretRef, active }`.
 - `source`: which provider + its settings (directory path, CRD selector, or DB connection)
+- `jwks`: `{ refreshInterval, fetchTimeout, prewarmRequired }` (JWKS cache manager settings; the manager prewarms all issuers before Serving and proactively refreshes on `refreshInterval`, doc 08)
 - `anonymous`: `{ targetAccount, expirySeconds, events?: EventSubjects }`
 
 **Routing aggregate**
@@ -77,7 +78,7 @@ The single shape the core consumes. Language-agnostic field view:
 
 - `name` (unique across the aggregate)
 - `targetAccount`
-- `issuer`: `{ authority, jwksUri?, jwksCacheSeconds, validateAudience, audience? }` — `jwksUri` is an optional override; otherwise it is resolved from the provider's OIDC discovery document (`{authority}/.well-known/openid-configuration`), so no provider-specific URL layout is assumed
+- `issuer`: `{ authority, jwksUri?, jwksCacheSeconds, refreshIntervalSeconds?, validateAudience, audience? }` — `jwksUri` is an optional override; otherwise it is resolved from the provider's OIDC discovery document (`{authority}/.well-known/openid-configuration`), so no provider-specific URL layout is assumed. `refreshIntervalSeconds` optionally overrides the bootstrap `jwks.refreshInterval` for this issuer.
 - `match?: ClaimMatch` (app selector among same-issuer candidates)
 - `anonymousProfile?: Grant` (contribution to the anonymous union)
 - `profiles: Profile[]` (ordered)

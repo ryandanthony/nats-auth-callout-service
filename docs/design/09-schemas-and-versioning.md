@@ -116,6 +116,7 @@ issuer:
   authority: https://id.ants.zone/realms/main
   jwksUri: null                   # optional override; else OIDC discovery
   jwksCacheSeconds: 300
+  refreshIntervalSeconds: null    # optional; overrides bootstrap jwks.refreshInterval
   validateAudience: true
   audience: nats
 match:                            # optional app selector among same-issuer apps
@@ -177,11 +178,17 @@ assertionKeys:                       # keyset, ADR 0014
 source:
   kind: files                        # or k8s
   directory: /config/apps
+jwks:                                # JWKS cache manager (doc 08)
+  refreshInterval: 5m                # proactive re-fetch cadence per issuer
+  fetchTimeout: 5s                   # hard timeout on any single discovery/JWKS fetch (fail closed)
+  prewarmRequired: true              # all issuers must warm before Serving
 anonymous:
   targetAccount: ANON
   expirySeconds: 300
   events: { success: anon.auth.success, failure: anon.auth.failure }
 ```
+
+The `jwks` block configures the [JWKS cache manager](./08-technical-architecture-csharp.md#jwks-cache-manager-keeping-the-idp-off-the-hot-path); a per-issuer `refreshIntervalSeconds` on an application's `issuer` block overrides `jwks.refreshInterval`, and `jwksCacheSeconds` (per issuer) bounds the cache lifetime, which should be ≥ the refresh interval so keys never expire between refreshes.
 
 ## 4. Kubernetes CRD
 
