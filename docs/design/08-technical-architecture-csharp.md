@@ -4,6 +4,8 @@ Concrete technology mapping for the rewrite. The language-agnostic design in [01
 
 **Target runtime:** .NET 10 (LTS). `net10.0` TFM, C# 14, nullable enabled, `Microsoft.NET.Sdk.Worker` host.
 
+**Target NATS server:** 2.11+ (pinned). This is required for JetStream per-message TTL, which the identity stores rely on for per-record token-lifetime expiry (ADR 0010). Auth callout itself needs 2.10+, so 2.11+ covers both.
+
 ## Assumptions
 
 - Single self-contained service process, one deployable container image (`ghcr.io/ryandanthony/nats-auth-callout-service`).
@@ -129,7 +131,7 @@ await foreach (var e in keysStore.WatchAsync<string>(">", cancellationToken: ct)
 ```
 
 - Bucket names: KV bucket names cannot contain `.`, so the dotted subject paths in [07](./07-kv-storage.md)/[ADR 0010](../architecture-decision-log/0010-session-jwt-store-in-kv.md) become bucket name (`callout_apps_{slug}_oidc_tokens`) + key. Decide and pin the slug→bucket mapping once; it is an interop contract with consumers.
-- Per-entry TTL: KV TTL is per-bucket in JetStream; per-record token-lifetime TTL needs either a bucket whose `MaxAge` equals the max token lifetime or JetStream per-message TTL (server 2.11+). **Confirm target NATS server version** — this affects the ADR 0010 "TTL matched to the token" claim.
+- Per-entry TTL: on the pinned 2.11+ server, use JetStream **per-message TTL** so each token record expires at its own token lifetime (ADR 0010), rather than a coarse bucket-wide `MaxAge`. The bucket may still set a `MaxAge` ceiling as a backstop.
 
 ## Kubernetes CRD source
 
@@ -159,17 +161,16 @@ Active config is a single immutable snapshot behind a `volatile` reference (or `
 
 These are not in [01](./01-overview.md)–[07](./07-kv-storage.md) and should be decided before or during the rewrite:
 
-1. **Target NATS server version + per-message TTL.** ADR 0010's per-record TTL depends on server 2.11+ message TTL or a bucket `MaxAge` compromise. Pin it.
-2. **KV bucket naming contract.** Dotted subjects can't be bucket names; the slug→bucket mapping is a consumer-facing interface. Document it as an ADR.
-3. **Health & readiness.** The service has no HTTP surface, but k8s wants liveness/readiness. Add a minimal `/healthz` `/readyz` (map `readyz` to the `Serving` state) via `Microsoft.Extensions.Diagnostics.HealthChecks`, or a NATS-based health check. Not covered by current design.
-4. **Watch-loss = fail-closed semantics.** [05](./05-runtime-and-lifecycle.md) covers bad config, not a silently dead k8s watch or lost NATS connection. Define: lost NATS connection → stop answering (already implied); dead config watch → keep last-good but alert, with a staleness bound.
-5. **Concurrency / backpressure.** Auth callout is on the client connect path. Define max in-flight auth requests, per-request timeout, and JWKS-fetch timeout so a slow IdP can't stall connects. Polly + bounded channel.
-6. **Clock skew / token validation params.** `ClockSkew`, allowed algorithms (reject `none`/HS* when expecting RS/ES), `ValidateAudience` defaults per [04](./04-configuration.md). Make these explicit.
-7. **Key rotation orchestration.** [05](./05-runtime-and-lifecycle.md) says the assertion key rotates independently; define the rotation trigger, overlap window (publish new `kid` before retiring old), and how the issuer seed rotates (server config coupling).
-8. **Multi-instance behavior.** Cluster-wide CRD watch + label selector implies multiple instances can share a cluster. Confirm: are two instances answering the same callout account HA/active-active, and is that safe (idempotent KV writes, duplicate events)? Events stream is best-effort so duplicates are OK; confirm KV writes are last-writer-wins safe.
-9. **Supply chain / build.** .NET 10 container via `Microsoft.NET.Build.Containers` or Dockerfile, trimming/AOT decision (NKeys/crypto + reflection-based config binding may block full AOT — likely trimmed, not AOT). SBOM + image signing to match your GHCR flow.
-10. **Schema versioning for events + CRD.** Event `schemaVersion` exists ([05](./05-runtime-and-lifecycle.md)); the CRD needs its own `apiVersion` evolution story (v1 → v1beta conversions) and the discovery descriptor schema needs a version too.
-11. **Local dev / no-k8s story.** Files source + a `docker-compose` with `nats-server -js` + Keycloak for a full loop, so the decision core is runnable without a cluster.
+1. **KV bucket naming contract.** Dotted subjects can't be bucket names; the slug→bucket mapping is a consumer-facing interface. Document it as an ADR.
+2. **Health & readiness.** The service has no HTTP surface, but k8s wants liveness/readiness. Add a minimal `/healthz` `/readyz` (map `readyz` to the `Serving` state) via `Microsoft.Extensions.Diagnostics.HealthChecks`, or a NATS-based health check. Not covered by current design.
+3. **Watch-loss = fail-closed semantics.** [05](./05-runtime-and-lifecycle.md) covers bad config, not a silently dead k8s watch or lost NATS connection. Define: lost NATS connection → stop answering (already implied); dead config watch → keep last-good but alert, with a staleness bound.
+4. **Concurrency / backpressure.** Auth callout is on the client connect path. Define max in-flight auth requests, per-request timeout, and JWKS-fetch timeout so a slow IdP can't stall connects. Polly + bounded channel.
+5. **Clock skew / token validation params.** `ClockSkew`, allowed algorithms (reject `none`/HS* when expecting RS/ES), `ValidateAudience` defaults per [04](./04-configuration.md). Make these explicit.
+6. **Key rotation orchestration.** [05](./05-runtime-and-lifecycle.md) says the assertion key rotates independently; define the rotation trigger, overlap window (publish new `kid` before retiring old), and how the issuer seed rotates (server config coupling).
+7. **Multi-instance behavior.** Cluster-wide CRD watch + label selector implies multiple instances can share a cluster. Confirm: are two instances answering the same callout account HA/active-active, and is that safe (idempotent KV writes, duplicate events)? Events stream is best-effort so duplicates are OK; confirm KV writes are last-writer-wins safe.
+8. **Supply chain / build.** .NET 10 container via `Microsoft.NET.Build.Containers` or Dockerfile, trimming/AOT decision (NKeys/crypto + reflection-based config binding may block full AOT — likely trimmed, not AOT). SBOM + image signing to match your GHCR flow.
+9. **Schema versioning for events + CRD.** Event `schemaVersion` exists ([05](./05-runtime-and-lifecycle.md)); the CRD needs its own `apiVersion` evolution story (v1 → v1beta conversions) and the discovery descriptor schema needs a version too.
+10. **Local dev / no-k8s story.** Files source + a `docker-compose` with `nats-server -js` + Keycloak for a full loop, so the decision core is runnable without a cluster.
 
 ## Validation / feedback loop for the rewrite
 
