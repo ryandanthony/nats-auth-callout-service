@@ -52,3 +52,5 @@ tests/AuthCallout.Secrets.Tests/**
 
 - [ ] All tests green; no secret value can be observed via logging test spy.
 - [ ] Mount contract documented (consumed by P17).
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

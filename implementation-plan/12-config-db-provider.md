@@ -87,3 +87,5 @@ by the provider at startup (optional `migrateOnStart` setting) or manually.
 - [ ] Doc note added to `docs/design/04-configuration.md` §Sources updating
       "Database (future)" → implemented shape (small PR-sized edit,
       coordinator-approved since it touches shared docs).
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

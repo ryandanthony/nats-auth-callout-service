@@ -61,3 +61,5 @@ dev/samples/TaskService/**
 - [ ] Editing `Note.yaml` (Local) / patching the CR (K8s) changes routing
       live — documented check.
 - [ ] No real secrets: all seeds/passwords are generated-or-dev-marked.
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

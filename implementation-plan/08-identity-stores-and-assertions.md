@@ -84,3 +84,5 @@ verification is P14's.
 - [ ] All tests green; discovery/assertion payloads schema-validated.
 - [ ] Bucket-name derivation comes from Contracts (no local string building).
 - [ ] Verification helper exposed for P14/P15 reuse.
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

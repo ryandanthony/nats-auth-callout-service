@@ -54,3 +54,5 @@ tests/AuthCallout.Nats.Tests/Events/**
 
 - [ ] All tests green; every emitted fixture schema-validates.
 - [ ] Metric name recorded for P13's OTel wiring.
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

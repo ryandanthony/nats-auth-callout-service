@@ -92,3 +92,5 @@ P14's.
 - [ ] ADR 0018 committed, indexes updated.
 - [ ] Store-failure semantics confirmed with coordinator (escalation above).
 - [ ] Responder consumes only Contracts interfaces for pipeline/store/events.
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

@@ -113,8 +113,10 @@ workers free up).
 ### Roles
 
 - **Coordinator** (root session): assigns packets, merges/rebases, owns
-  `AuthCallout.Contracts` changes, runs the plan, resolves conflicts, reports
-  at milestones. Does not implement packets while workers are active.
+  `AuthCallout.Contracts` changes, runs the plan, resolves conflicts,
+  **reviews every packet on completion** (see Coordinator code review below),
+  and reports at milestones. Does not implement packets while workers are
+  active.
 - **Workers** (max 6): one packet at a time, complete it, report
   status + validation, take the next.
 
@@ -140,6 +142,30 @@ workers free up).
    hand-roll a temporary interface.
 7. **No design changes.** Anything that contradicts a design doc or ADR is a
    coordinator escalation, not a local fix.
+
+### Coordinator code review (every packet)
+
+Direct-to-main keeps workers unblocked, so review happens **post-landing but
+pre-acceptance**. On each worker's `swarm report`, the coordinator reviews the
+packet's commits before marking the packet accepted:
+
+1. **Acceptance criteria first.** Walk the packet file's Definition of done
+   and ADR→test map line by line against the actual diff and test output: is
+   each DoD item demonstrably satisfied, and does every ADR→test row have a
+   real, meaningful test (not a placeholder that asserts nothing)?
+2. **Design fidelity.** Spot-check the code against the design docs/ADRs the
+   packet cites — the failure mode DoD checklists miss is code that passes its
+   own tests but diverges from a doc the worker skimmed.
+3. **Boundary compliance.** Files-owned respected, no Contracts edits, no
+   forbidden package references (doc 08 isolation invariants), no shared-file
+   changes that weren't coordinator-mediated.
+4. **Verdict.** Pass → packet **accepted**, dependents may start. Findings →
+   fix-up task back to the same worker; the packet stays unaccepted (and
+   dependents are held where feasible) until re-review passes. Disputes about
+   the design itself escalate to Ryan (review by exception).
+
+Every packet's Definition of done implicitly ends with **"coordinator review
+passed"**; a `swarm report` is a review request, not an acceptance.
 
 ### Testing bar
 

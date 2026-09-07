@@ -81,3 +81,5 @@ tests/AuthCallout.Integration/**
 - [ ] Suite runtime bounded (shared fixtures, parallel collections where safe).
 - [ ] M2 report to coordinator with evidence (scenario list + timings).
 - [ ] Flake policy: any retry-decorated test documents why.
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

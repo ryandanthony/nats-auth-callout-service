@@ -75,3 +75,5 @@ deploy/crd/samples/**            (Note.yaml, Task.yaml sample CRs)
       in a container).
 - [ ] Sample CRs match doc 09 and are consumed by P14/P15.
 - [ ] KubernetesClient referenced **only** by this project (doc 08 isolation).
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

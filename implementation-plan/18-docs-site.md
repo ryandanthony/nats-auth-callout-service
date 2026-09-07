@@ -56,3 +56,5 @@ on colocation with the existing `docs/design` + `docs/architecture-decision-log`
       (no doc-only invention; cite design docs).
 - [ ] Schema↔reference drift check in CI.
 - [ ] README rewritten: badges, quick start, links to site + design docs.
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

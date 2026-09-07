@@ -75,3 +75,5 @@ tests/AuthCallout.Core.Tests/Pipeline/**
 - [ ] All tests green; pipeline files ≥ 95% coverage (drives the Core 90% gate).
 - [ ] `ITokenValidator` consumed via interface only (NSubstitute in tests).
 - [ ] Decision object review with coordinator (P07/P08/P09 consume it).
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

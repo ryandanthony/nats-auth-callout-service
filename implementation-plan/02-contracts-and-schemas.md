@@ -143,3 +143,5 @@ Hand-authored, matching doc 09 field tables exactly:
 - [ ] Each public type's XML doc cites its design doc/ADR.
 - [ ] **Coordinator review, then Ryan review (M0 gate). Freeze announced.**
 - [ ] P12's source-settings shape confirmed with coordinator before freeze.
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

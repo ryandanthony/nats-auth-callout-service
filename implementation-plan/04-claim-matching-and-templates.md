@@ -78,3 +78,5 @@ Do **not** touch `src/AuthCallout.Core/Pipeline/**` (P05).
 - [ ] All tests green; this packet's files at ≥ 95% line coverage.
 - [ ] Transform semantics documented in XML docs (interop contract).
 - [ ] No references beyond Contracts + BCL.
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

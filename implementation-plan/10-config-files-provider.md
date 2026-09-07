@@ -60,3 +60,5 @@ tests/AuthCallout.Config.Tests/Files/**
 - [ ] All tests green (real temp directories, no mocking of the FS).
 - [ ] Golden canonical-model fixture published for the cross-source contract
       test (coordinate location with P11/P12 via coordinator).
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

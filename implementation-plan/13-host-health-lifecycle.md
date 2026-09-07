@@ -84,3 +84,5 @@ Host-level tests via **Alba** (health endpoints) + component substitutes:
       reaches Serving with a local `nats-server` (manual smoke, documented).
 - [ ] Health JSON never contains secret material (spy test).
 - [ ] Coordinator announces M1 when this + all Wave 1–2 packets are green.
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

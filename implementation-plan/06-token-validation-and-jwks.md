@@ -89,3 +89,5 @@ Do **not** touch `src/AuthCallout.Identity/Assertions/**` (P08).
       tokens returns `Denied`).
 - [ ] Health/metrics surfaces consumable by P13 (interface in Contracts).
 - [ ] Stub IdP fixture advertised to P14.
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

@@ -93,3 +93,5 @@ CI workflow) become **coordinator-mediated** — workers request changes via DM.
       (verify: `Core`/`Contracts` csproj contain no NATS/k8s/DB packages).
 - [ ] Chosen package versions recorded (commit message or `docs/` note).
 - [ ] Coordinator notified (unblocks P02 and P16).
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

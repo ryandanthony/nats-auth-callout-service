@@ -52,3 +52,5 @@ Dockerfile
       SBOM + provenance attached, `cosign verify` documented and tested.
 - [ ] Image size and trim warnings reviewed (no suppressed trim warnings
       without a comment).
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).

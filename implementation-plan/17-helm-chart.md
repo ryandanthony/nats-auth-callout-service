@@ -54,3 +54,5 @@ deploy/helm/nats-auth-callout-service/**
 - [ ] k3s install smoke: pod Ready, `/readyz` 200, with the files source.
 - [ ] All three `source.kind` values render valid manifests.
 - [ ] No secret material in chart or values defaults.
+- [ ] **Coordinator review passed** (acceptance criteria + ADR→test map verified
+      against the diff; packet not accepted until then — see 00-overview.md).
