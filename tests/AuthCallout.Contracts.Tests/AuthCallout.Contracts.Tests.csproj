@@ -2,6 +2,10 @@
 
   <PropertyGroup>
     <IsPackable>false</IsPackable>
+    <!-- xUnit test naming convention (MethodUnderTest_Scenario_ExpectedResult) is
+         intentionally underscored for readability; CA1707 flags this repo-wide but
+         it is the accepted xUnit style, scoped to this test-only project. -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -10,6 +14,10 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="NSubstitute" />
+    <!-- Test-only: validates emitted/example JSON against the hand-authored schemas
+         in schemas/ (draft 2020-12). Coordinator-approved (P02 DM); never referenced
+         by AuthCallout.Contracts itself. -->
+    <PackageReference Include="JsonSchema.Net" />
   </ItemGroup>
 
   <ItemGroup>
@@ -18,6 +26,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AuthCallout.Contracts\AuthCallout.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Hand-authored schemas (owned by this packet) copied alongside the test binaries
+         so schema-validation tests can load them without repo-root path assumptions. -->
+    <None Include="..\..\schemas\**\*.json" LinkBase="schemas" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures\**\*.*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

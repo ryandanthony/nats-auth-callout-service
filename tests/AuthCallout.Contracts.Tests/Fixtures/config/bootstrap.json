@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "natsUrl": "nats://nats:4222",
+  "issuerSeed": { "kind": "file", "path": "/secrets/issuer.seed" },
+  "serviceUserSeed": { "kind": "k8sSecret", "name": "callout-svc", "key": "seed" },
+  "assertionKeys": [
+    { "kid": "2026-09-06a", "key": { "kind": "file", "path": "/secrets/assert-a.seed" }, "active": true },
+    { "kid": "2026-08-01a", "key": { "kind": "file", "path": "/secrets/assert-old.seed" }, "active": false }
+  ],
+  "source": {
+    "kind": "files",
+    "directory": "/config/apps",
+    "warnStaleness": "60s",
+    "maxStaleness": "15m",
+    "reconnectBackoff": "5s"
+  },
+  "jwks": {
+    "refreshInterval": "5m",
+    "fetchTimeout": "5s",
+    "prewarmRequired": true
+  },
+  "concurrency": {
+    "maxDegreeOfParallelism": 64,
+    "perRequestTimeout": "1500ms",
+    "queueCapacity": 256
+  },
+  "anonymous": {
+    "targetAccount": "ANON",
+    "expiry": "5m",
+    "events": { "success": "anon.auth.success", "failure": "anon.auth.failure" }
+  }
+}

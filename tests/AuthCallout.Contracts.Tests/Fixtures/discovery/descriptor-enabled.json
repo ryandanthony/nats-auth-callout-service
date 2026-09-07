@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "app": "notes",
+  "identityPropagation": {
+    "enabled": true,
+    "header": "Callout-Identity",
+    "oidcTokenBucket": "callout_apps_notes_oidc_tokens",
+    "assertionBucket": "callout_apps_notes_assertions",
+    "assertionKeysBucket": "callout_assertion_keys",
+    "currentKid": "2026-09-06a"
+  }
+}
