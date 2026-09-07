@@ -56,5 +56,9 @@
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.15.0" />
     <PackageVersion Include="Testcontainers.K3s" Version="4.15.0" />
     <PackageVersion Include="Alba" Version="8.5.3" />
+    <!-- Test-only JSON Schema (draft 2020-12) validator, coordinator-approved (P02 DM) for
+         AuthCallout.Contracts.Tests to validate doc-09 example fixtures against the four
+         hand-authored schemas. Never referenced by AuthCallout.Contracts itself. -->
+    <PackageVersion Include="JsonSchema.Net" Version="7.3.4" />
   </ItemGroup>
 </Project>
