@@ -1,0 +1,51 @@
+# nats-auth-callout-service
+
+[![CI](https://github.com/ryandanthony/nats-auth-callout-service/actions/workflows/ci.yml/badge.svg)](https://github.com/ryandanthony/nats-auth-callout-service/actions/workflows/ci.yml)
+
+A standalone NATS [auth callout](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/auth_callout)
+service written in C# / .NET 10. It intercepts `$SYS.REQ.USER.AUTH` requests,
+validates bearer tokens against configured OIDC issuers (JWKS), resolves a
+grant (or denial) from a config-driven routing model, and mints signed NATS
+user JWTs, so client applications authenticate against an external identity
+provider (e.g. Keycloak) instead of static NATS credentials. Routing config
+can be sourced from local files, a Kubernetes CRD, or PostgreSQL, and
+identity/session state is persisted in NATS JetStream KV.
+
+The service is a single self-contained worker process (no inbound business
+HTTP API beyond a minimal `/healthz` `/readyz` `/startupz` surface on port
+`8080`), designed to run as one or more instances behind a NATS queue-group
+subscription for HA. See [`docs/design/`](./docs/design/) for the full
+design (start at [`01-overview.md`](./docs/design/01-overview.md)) and the
+[architecture decision log](./docs/architecture-decision-log/) for the
+rationale behind key choices. The build is being assembled incrementally per
+[`implementation-plan/`](./implementation-plan/).
+
+## Build
+
+Prerequisites: [.NET 10 SDK](https://dotnet.microsoft.com/) (version pinned
+in `global.json`), Docker (for integration tests via Testcontainers).
+
+### Restore
+
+This repo's analyzer package, `FestinaLente.CodeStandards`, is published to
+a GitHub Packages feed under the `festina-lente-io` org (see `nuget.config`).
+Restoring requires an authenticated `github` source even though the package
+itself is public. Locally, generate a GitHub PAT with `read:packages` scope
+and run:
+
+```bash
+dotnet nuget update source github -u <your-github-username> -p <your-pat> --store-password-in-clear-text
+```
+
+Then:
+
+```bash
+git clone https://github.com/ryandanthony/nats-auth-callout-service.git
+cd nats-auth-callout-service
+dotnet restore AuthCallout.slnx
+dotnet build AuthCallout.slnx -warnaserror
+dotnet test AuthCallout.slnx
+```
+
+CI authenticates the same feed using the workflow's `GITHUB_TOKEN`; see
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml).

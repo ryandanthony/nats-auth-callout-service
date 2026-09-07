@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Authenticate GitHub Packages (festina-lente-io feed)
+        run: >-
+          dotnet nuget update source github
+          --username "github-actions"
+          --password "${{ secrets.GITHUB_TOKEN }}"
+          --store-password-in-clear-text
+          --configfile nuget.config
+
+      - name: Restore
+        run: dotnet restore AuthCallout.slnx
+
+      - name: Build (warnaserror)
+        run: dotnet build AuthCallout.slnx --no-restore -warnaserror
+
+      - name: Format check
+        run: dotnet format AuthCallout.slnx --verify-no-changes --no-restore
+
+  unit-tests:
+    name: unit-tests
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Authenticate GitHub Packages (festina-lente-io feed)
+        run: >-
+          dotnet nuget update source github
+          --username "github-actions"
+          --password "${{ secrets.GITHUB_TOKEN }}"
+          --store-password-in-clear-text
+          --configfile nuget.config
+
+      - name: Restore
+        run: dotnet restore AuthCallout.slnx
+
+      - name: Run unit tests with coverage
+        run: >-
+          dotnet test AuthCallout.slnx
+          --no-restore
+          --filter "FullyQualifiedName!~AuthCallout.Integration"
+          --collect:"XPlat Code Coverage"
+          --results-directory ./test-results
+          --logger "trx;LogFileName=test-results.trx"
+          -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+
+      - name: Install ReportGenerator
+        if: always()
+        run: dotnet tool install --global dotnet-reportgenerator-globaltool
+
+      - name: Merge coverage reports
+        if: always()
+        run: >-
+          reportgenerator
+          -reports:"./test-results/**/coverage.cobertura.xml"
+          -targetdir:"./coverage-report"
+          -reporttypes:"Cobertura;TextSummary"
+          -assemblyfilters:"+AuthCallout.Core"
+
+      - name: Enforce AuthCallout.Core coverage threshold (90% line)
+        run: |
+          # No-ops while AuthCallout.Core has no code: an empty assembly filter
+          # produces no coverage rows, so we skip the gate rather than divide by zero.
+          if [ ! -f ./coverage-report/Cobertura.xml ]; then
+            echo "No coverage report produced (Core has no testable code yet). Skipping gate."
+            exit 0
+          fi
+          LINE_RATE=$(grep -oP 'line-rate="\K[^"]+' ./coverage-report/Cobertura.xml | head -1)
+          if [ -z "$LINE_RATE" ]; then
+            echo "No line-rate found (Core assembly not present in coverage data yet). Skipping gate."
+            exit 0
+          fi
+          LINE_PCT=$(echo "$LINE_RATE * 100" | bc -l | xargs printf "%.1f")
+          echo "AuthCallout.Core line coverage: ${LINE_PCT}%"
+          if (( $(echo "$LINE_PCT < 90.0" | bc -l) )); then
+            echo "::error::AuthCallout.Core line coverage ${LINE_PCT}% is below the required 90% threshold"
+            exit 1
+          fi
+
+      - name: Upload test results (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ./test-results
+          retention-days: 7
+
+  integration-tests:
+    name: integration-tests
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Authenticate GitHub Packages (festina-lente-io feed)
+        run: >-
+          dotnet nuget update source github
+          --username "github-actions"
+          --password "${{ secrets.GITHUB_TOKEN }}"
+          --store-password-in-clear-text
+          --configfile nuget.config
+
+      - name: Restore
+        run: dotnet restore AuthCallout.slnx
+
+      # tests/AuthCallout.Integration is an empty shell until P14. Testcontainers
+      # needs Docker, available by default on ubuntu-latest.
+      - name: Run integration tests
+        run: >-
+          dotnet test tests/AuthCallout.Integration/AuthCallout.Integration.csproj
+          --no-restore
+          --results-directory ./integration-results
+          --logger "trx;LogFileName=integration-results.trx"
+
+      - name: Upload integration test results (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: ./integration-results
+          retention-days: 7
