@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Covers AuthCallout.Config.Files, AuthCallout.Config.K8s, AuthCallout.Config.Postgres
+       (P10/P11/P12) — one test project per the P01 layout. -->
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AuthCallout.Config.Files\AuthCallout.Config.Files.csproj" />
+    <ProjectReference Include="..\..\src\AuthCallout.Config.K8s\AuthCallout.Config.K8s.csproj" />
+    <ProjectReference Include="..\..\src\AuthCallout.Config.Postgres\AuthCallout.Config.Postgres.csproj" />
+    <ProjectReference Include="..\..\src\AuthCallout.Contracts\AuthCallout.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>
