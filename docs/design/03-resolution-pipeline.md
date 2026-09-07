@@ -61,10 +61,10 @@ From the selected profile (or the anonymous union):
 - Start from the static `publish` / `subscribe` subjects.
 - Resolve the profile's template variables from validated claims, applying each variable's transform pipeline, then expand `publishTemplates` / `subscribeTemplates` (per-value, cross-product across multi-valued variables). A `required` variable with no value denies; an unsafe transformed value denies (ADR 0009).
 - Determine the minted JWT `name` from the profile's name claim.
-- Determine expiry: prefer the token's own `exp`, else the profile's fallback; anonymous uses the global anonymous expiry.
+- Determine expiry from the token's own `exp` (always present: validation requires an expiration time, ADR 0016); anonymous uses the global anonymous expiry.
 - Target account: the application's account, or the global anonymous account for anonymous.
 - If the profile sets `autoAddSessionAccess`, add read permission for the application's token KV bucket (`callout.apps.{app-slug}.oidc-tokens.>`) to the grant (ADR 0010).
-- If the application has identity propagation enabled (ADR 0012), every authenticated (non-anonymous) grant also gets read access to the keys bucket (`callout.assertion-keys.>`) and this application's discovery entry (`callout.apps.{app-slug}.discovery`) so it can discover behavior and verify identity assertions (ADR 0011); anonymous grants do not. When the application disables identity propagation, these reads are not added and `autoAddSessionAccess` is a config error.
+- Every authenticated (non-anonymous) grant also gets read access to the keys bucket (`callout.assertion-keys.>`) and to this application's discovery entry (`callout.apps.{app-slug}.discovery`), **regardless of the application's identity-propagation toggle** (ADR 0011, 0012), so it can verify identity assertions and discover the application's propagation behavior at runtime; anonymous grants get neither. When the application disables identity propagation, `autoAddSessionAccess` on its profiles is a config error (ADR 0012), but the keys and discovery reads are still added.
 
 ### Store identity (ADR 0010, 0011)
 

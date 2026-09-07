@@ -1,6 +1,6 @@
 # ADR index — nats-auth-callout-service
 
-Architecture Decision Records for `~/code/nats-auth-callout-service`. Each ADR captures one decision, its context, and consequences. Source discussion: [../rewrite-input.md](../rewrite-input.md).
+Architecture Decision Records for `nats-auth-callout-service`. Each ADR captures one decision, its context, and consequences.
 
 Status legend: `proposed` (agreed, pre-implementation), `accepted` (locked in), `superseded`.
 

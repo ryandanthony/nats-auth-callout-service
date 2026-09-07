@@ -6,7 +6,7 @@
 
 ## Context
 
-Every config source (JSON/YAML files, Kubernetes CRD, later a database) maps into one canonical in-memory model that the core consumes (ADR 0005). That model must express: named permission profiles per application (ADR 0001), OIDC-based service and user auth (ADR 0002), the issuer, validate, app `Match`, profile `Match` resolution pipeline (ADR 0003), the cross-application anonymous union (ADR 0004), secret references (ADR 0005), and per-application auth outcome event subjects (ADR 0008), templated subject variables bound to transformed claims (ADR 0009), per-profile session-store access (ADR 0010), and the assertion signing key (ADR 0011). This ADR fixes that canonical shape so all sources and the core agree on one structure.
+Every config source (JSON/YAML files, Kubernetes CRD, later a database) maps into one canonical in-memory model that the core consumes (ADR 0005). That model must express: named permission profiles per application (ADR 0001), OIDC-based service and user auth (ADR 0002), the issuer, validate, app `Match`, profile `Match` resolution pipeline (ADR 0003), the cross-application anonymous union (ADR 0004), secret references (ADR 0005), and per-application auth outcome event subjects (ADR 0008), templated subject variables bound to transformed claims (ADR 0009), per-profile session-store access (ADR 0010), the assertion signing keyset (ADR 0011, ADR 0014), the per-application identity-propagation toggle (ADR 0012), and strict token-validation parameters (ADR 0016). This ADR fixes that canonical shape so all sources and the core agree on one structure.
 
 ## Decision
 
@@ -17,9 +17,9 @@ Two top-level models matching the two config layers (ADR 0005).
 - `NatsUrl: string`
 - `IssuerSeed: SecretRef` — signs minted user JWTs and the auth response.
 - `ServiceUserSeed: SecretRef?` — the callout's own NATS user.
-- `AssertionKey: SecretRef?` — dedicated keypair for signing identity assertions (ADR 0011); its public key is published to the keys KV bucket. Optional; only needed when assertions are enabled.
+- `AssertionKeys: AssertionKey[]?` — keyset for signing identity assertions (ADR 0011, ADR 0014). Each entry is `{ Kid, Key: SecretRef, Active }`; exactly one entry is `Active` (the signer), the rest are verify-only. Public keys are published to the keys KV bucket. Optional; only needed when assertions are enabled.
 - `Source` — which routing/apps provider to use and its settings (path for a file directory, cluster-wide instance-matching label/selector for the CRD watch, connection string for a database).
-- `Anonymous: AnonymousGlobal` — `TargetAccount: string`, `ExpirySeconds: int` (ADR 0004), plus `Events: EventSubjects?` for anonymous outcome events, since anonymous is not tied to one application (ADR 0008).
+- `Anonymous: AnonymousGlobal` — `TargetAccount: string`, `Expiry: duration` (ADR 0004; the sole expiry source for anonymous grants, which carry no token `exp`), plus `Events: EventSubjects?` for anonymous outcome events, since anonymous is not tied to one application (ADR 0008).
 
 A `SecretRef` resolves either an inline literal or an external reference (Kubernetes Secret, mounted file, vault). Modeled as a discriminated shape: `{ kind: "inline" | "file" | "k8sSecret" | "vault", value/name/key... }`.
 
@@ -39,12 +39,15 @@ A `SecretRef` resolves either an inline literal or an external reference (Kubern
     provider's OIDC discovery document
     (`{Authority}/.well-known/openid-configuration` -> `jwks_uri`). No
     provider-specific URL shape is assumed.
-  - `JwksCacheSeconds: int`
-  - `ValidateAudience: bool`, `Audience: string?` — validation, independent of routing (ADR 0003).
+  - `JwksCache: duration`
+  - `RefreshInterval: duration?` — optional per-issuer override of the bootstrap `jwks.refreshInterval` proactive-refresh cadence (doc 08).
+  - `ValidateAudience: bool`, `Audience: string[]?` — one or more accepted audiences (→ `ValidAudiences`); required when `ValidateAudience` is true (ADR 0016). Validation, independent of routing (ADR 0003).
+  - `ClockSkew: duration` — default `60s`, capped at `300s` at config load (ADR 0016).
+  - `AllowedAlgorithms: string[]` — explicit asymmetric-only allow-list; `HS*`/`none` are a config-load error (ADR 0016).
 - `Match: ClaimMatch?` — app-level selector among same-issuer candidates (ADR 0003). Null when the issuer already identifies a single app.
 - `AnonymousProfile: Grant?` — this app's contribution to the anonymous union (ADR 0004).
 - `Profiles: Profile[]` — ordered; first match wins (ADR 0001).
-- `IdentityPropagation: IdentityPropagationConfig?` — per-app identity propagation toggle (ADR 0012). `{ Enabled: bool }`, default enabled. When disabled, the callout writes no token/assertion records and adds no keys-bucket read for this app, and `AutoAddSessionAccess` on its profiles is invalid.
+- `IdentityPropagation: IdentityPropagationConfig?` — per-app identity propagation toggle (ADR 0012). `{ Enabled: bool }`, default enabled. When disabled, the callout writes no token/assertion records for this app and `AutoAddSessionAccess` on its profiles is invalid; keys-bucket and discovery reads are still added to every authenticated grant (ADR 0011, 0012).
 - `Events: EventSubjects?` — auth outcome event subjects for this application (ADR 0008). Null disables event publishing for the application.
 
 `EventSubjects` (shared by applications and the global anonymous config):
@@ -62,7 +65,8 @@ A `SecretRef` resolves either an inline literal or an external reference (Kubern
 - `Variables: TemplateVariable[]` — named variables bound to (optionally transformed) claims (ADR 0009).
 - `PublishTemplates: string[]`, `SubscribeTemplates: string[]` — subject patterns with `{name}` placeholders resolved from `Variables` (ADR 0009).
 - `AutoAddSessionAccess: bool` — when true, the minted grant also gets read access to this application's token KV bucket `callout.apps.{app-slug}.oidc-tokens.>` (ADR 0010). Default false.
-- `FallbackExpirySeconds: int` — used when the token carries no `exp`.
+
+There is no per-profile fallback expiry: validation requires every token to carry `exp` (ADR 0016), so a token-bearing grant always uses the token's `exp`, and the only tokenless path (anonymous) uses the global `Anonymous.Expiry`.
 
 `TemplateVariable` (ADR 0009):
 
@@ -96,4 +100,4 @@ A `SecretRef` resolves either an inline literal or an external reference (Kubern
 ## Related
 
 - Design: [04 — Configuration](../design/04-configuration.md#canonical-model-adr-0007), [02 — Authorization model](../design/02-authorization-model.md#concepts).
-- ADRs: [0001](./0001-named-permission-profiles.md), [0002](./0002-service-auth-via-oidc-not-known-keys.md), [0003](./0003-resolution-order-issuer-validate-app-profile.md), [0004](./0004-anonymous-grant-is-union-across-apps.md), [0005](./0005-config-abstraction-and-sources.md), [0008](./0008-publish-auth-outcome-events.md), [0009](./0009-templated-subject-variables.md), [0010](./0010-session-jwt-store-in-kv.md), [0011](./0011-signed-identity-assertion.md) — this model expresses them all.
+- ADRs: [0001](./0001-named-permission-profiles.md), [0002](./0002-service-auth-via-oidc-not-known-keys.md), [0003](./0003-resolution-order-issuer-validate-app-profile.md), [0004](./0004-anonymous-grant-is-union-across-apps.md), [0005](./0005-config-abstraction-and-sources.md), [0008](./0008-publish-auth-outcome-events.md), [0009](./0009-templated-subject-variables.md), [0010](./0010-session-jwt-store-in-kv.md), [0011](./0011-signed-identity-assertion.md), [0012](./0012-identity-propagation-toggle-and-discovery.md), [0014](./0014-key-rotation-orchestration.md), [0016](./0016-token-validation-parameters.md) — this model expresses them all.

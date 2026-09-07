@@ -29,7 +29,7 @@ Validation parameters are fixed by the design and configured only at the **issue
 
 | Parameter | Default | Rule |
 |-----------|---------|------|
-| `clockSkewSeconds` | **60** | Covers real NTP drift only. Config-load rejects a value above a hard cap (**300s**). Never the framework's 5-minute default. |
+| `clockSkew` | **`60s`** | Duration string. Covers real NTP drift only. Config-load rejects a value above a hard cap (**`300s`**). Never the framework's 5-minute default. |
 | `allowedAlgorithms` | asymmetric set: `RS256/384/512`, `ES256/384/512`, `PS256/384/512` | Explicit allow-list mapped to `TokenValidationParameters.ValidAlgorithms`. **`HS*` and `none` are never allowed**, listing either is a config-load error. |
 | `validateAudience` | **true** | When true, `audience` is **required** (config-load error if absent). `false` is a deliberate, documented opt-out for providers that don't stamp `aud` on access tokens. |
 | `audience` | (none) | One or more accepted audiences → `ValidAudiences`. Required when `validateAudience` is true. |
@@ -48,7 +48,7 @@ The whole batch is rejected (keep last-good) if any issuer:
 
 - lists `HS*` or `none` in `allowedAlgorithms`, or lists an unknown algorithm;
 - sets `validateAudience: true` with no `audience`;
-- sets `clockSkewSeconds` above the cap or negative.
+- sets `clockSkew` above the cap or negative.
 
 ## Consequences
 

@@ -45,7 +45,7 @@ callout.apps.{app-slug}.assertions.{jti}    # the client's signed assertion, key
 - Keyed by the client's token `jti` (the one value the client already knows about itself), used **only** so the client can discover its own generated id after connecting.
 - Value — the client's **signed identity assertion** (ADR 0011), which contains the generated id. (Storing the assertion here, rather than a bare id, means the value the client fetches is already the trusted artifact it will attach to messages.)
 - Same TTL as the token record.
-- `jti` is used **only** as this self-lookup key. If a token carries no `jti`, the callout falls back to another client-known value (configurable; e.g. `sub`) or omits the id-lookup entry, in which case identity propagation is unavailable for that connection but the grant still stands.
+- `jti` is used **only** as this self-lookup key. If a token carries no `jti`, the callout falls back to `sub` (fixed, not configurable) or omits the id-lookup entry, in which case identity propagation is unavailable for that connection but the grant still stands.
 
 ### Access grants
 
@@ -86,7 +86,7 @@ The callout sets no message headers. There is deliberately no bare-id header: a 
 ## Consequences
 
 - The correlation key is provider-neutral: it depends on no token claim, so any OIDC provider works regardless of whether it emits `jti`, `sid`, etc.
-- `jti` (or a configured fallback) is used only as the client's self-lookup key in `callout.apps.{app-slug}.assertions`, never as the identity key downstream.
+- `jti` (or the `sub` fallback) is used only as the client's self-lookup key in `callout.apps.{app-slug}.assertions`, never as the identity key downstream.
 - Downstream services obtain the authenticated identity through a standard OIDC JWT at a deterministic KV location, resolved from the verified assertion.
 - Applications are isolated: both buckets are namespaced per application slug; `AutoAddSessionAccess` and id self-lookup grants are scoped per application.
 - The callout requires JetStream KV write access to both buckets; its NATS user must be permitted to publish there.

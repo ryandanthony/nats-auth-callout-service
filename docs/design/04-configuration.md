@@ -66,10 +66,10 @@ The single shape the core consumes. Language-agnostic field view:
 - `issuerSeed: SecretRef`
 - `serviceUserSeed: SecretRef?`
 - `assertionKeys: AssertionKey[]?` (signs identity assertions; a keyset with exactly one `active`, the rest verify-only, ADR 0011 / ADR 0014). Each: `{ kid, key: SecretRef, active }`.
-- `source`: which provider + its settings (directory path, CRD selector, or DB connection), plus watch health thresholds `{ warnStalenessSeconds, maxStalenessSeconds, reconnectBackoff }` (dead-watch staleness bounds, [ADR 0017](../architecture-decision-log/0017-watch-loss-and-connection-loss-semantics.md))
+- `source`: which provider + its settings (directory path, CRD selector, or DB connection), plus watch health thresholds `{ warnStaleness, maxStaleness, reconnectBackoff }` (duration strings; dead-watch staleness bounds, [ADR 0017](../architecture-decision-log/0017-watch-loss-and-connection-loss-semantics.md))
 - `jwks`: `{ refreshInterval, fetchTimeout, prewarmRequired }` (JWKS cache manager settings; the manager prewarms all issuers before Serving and proactively refreshes on `refreshInterval`, doc 08)
 - `concurrency`: `{ maxDegreeOfParallelism, perRequestTimeout, queueCapacity? }` (in-process parallelism and backpressure via `Parallel.ForEachAsync`, doc 08)
-- `anonymous`: `{ targetAccount, expirySeconds, events?: EventSubjects }`
+- `anonymous`: `{ targetAccount, expiry, events?: EventSubjects }` — `expiry` (duration string) is the sole expiry source for anonymous grants, which carry no token `exp`
 
 **Routing aggregate**
 
@@ -79,7 +79,7 @@ The single shape the core consumes. Language-agnostic field view:
 
 - `name` (unique across the aggregate)
 - `targetAccount`
-- `issuer`: `{ authority, jwksUri?, jwksCacheSeconds, refreshIntervalSeconds?, validateAudience, audience?, clockSkewSeconds?, allowedAlgorithms? }` — `jwksUri` is an optional override; otherwise it is resolved from the provider's OIDC discovery document (`{authority}/.well-known/openid-configuration`), so no provider-specific URL layout is assumed. `refreshIntervalSeconds` optionally overrides the bootstrap `jwks.refreshInterval` for this issuer. `clockSkewSeconds` (default 60, capped), `allowedAlgorithms` (asymmetric only; `HS*`/`none` rejected), and `validateAudience`/`audience` defaults are defined in [ADR 0016](../architecture-decision-log/0016-token-validation-parameters.md).
+- `issuer`: `{ authority, jwksUri?, jwksCache, refreshInterval?, validateAudience, audience?, clockSkew?, allowedAlgorithms? }` — durations are duration strings (`5m`, `60s`). `jwksUri` is an optional override; otherwise it is resolved from the provider's OIDC discovery document (`{authority}/.well-known/openid-configuration`), so no provider-specific URL layout is assumed. `refreshInterval` optionally overrides the bootstrap `jwks.refreshInterval` for this issuer. `audience` is one or more accepted audiences, required when `validateAudience` is true. `clockSkew` (default `60s`, capped), `allowedAlgorithms` (asymmetric only; `HS*`/`none` rejected), and `validateAudience`/`audience` defaults are defined in [ADR 0016](../architecture-decision-log/0016-token-validation-parameters.md).
 - `match?: ClaimMatch` (app selector among same-issuer candidates)
 - `anonymousProfile?: Grant` (contribution to the anonymous union)
 - `profiles: Profile[]` (ordered)
@@ -95,7 +95,8 @@ The single shape the core consumes. Language-agnostic field view:
 - `variables: TemplateVariable[]`
 - `publishTemplates[]`, `subscribeTemplates[]` (use `{name}` placeholders)
 - `autoAddSessionAccess` (grant read of `callout.apps.{app-slug}.oidc-tokens.>`, ADR 0010)
-- `fallbackExpirySeconds`
+
+There is no per-profile fallback expiry: tokens always carry `exp` (validation requires it, ADR 0016), and anonymous grants use the global `anonymous.expiry`.
 
 **TemplateVariable**
 

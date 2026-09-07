@@ -13,7 +13,7 @@ Microservices need to connect to NATS and receive scoped permissions. They shoul
 A microservice authenticates to the callout with an **OIDC client-credentials JWT** (each service is its own OIDC client). Its token flows through the same validation and resolution pipeline as a user token (ADR 0003), and its permissions come from a named profile (ADR 0001) matched on a service-identifying claim. Because profile `Match` is generic over any claim path (ADR 0007), no service-identifying claim is hard-coded; **`azp`** is the documented default (Keycloak sets it to the calling client's id under client-credentials), and an operator may match on `client_id`, `aud`, or a custom claim instead.
 
 - Services receive least-privilege, scoped subjects from their profile.
-- No NATS keys are provisioned for service auth; trust is delegated entirely to the OIDC provider. There is no NKey allow-list or break-glass bypass: every connection authenticates through token validation and is authorized by a profile (or the anonymous grant when no valid token is presented).
+- No NATS keys are provisioned for service auth; trust is delegated entirely to the OIDC provider. There is no NKey allow-list or break-glass bypass: every connection authenticates through token validation and is authorized by a profile (or the anonymous grant when no token is presented; a presented-but-invalid token is denied, never downgraded to anonymous, ADR 0003).
 
 ## Consequences
 

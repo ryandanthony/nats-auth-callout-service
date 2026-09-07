@@ -37,7 +37,7 @@ Verifiers fetch `callout_assertion_keys.{kid}` by the `kid` in the assertion hea
 
 ### Rotation procedure (assertion key)
 
-Rotation is a keyset edit, applied through the normal config path (bootstrap reload / restart). The overlap window is created by keeping the old key non-active before removing it:
+Rotation is a keyset edit, applied by changing the bootstrap config and **restarting the service** (the bootstrap layer is loaded once at startup and never hot-reloaded, ADR 0005 / doc 04). The overlap window is created by keeping the old key non-active before removing it:
 
 ```mermaid
 flowchart LR

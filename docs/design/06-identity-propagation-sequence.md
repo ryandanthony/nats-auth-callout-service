@@ -57,6 +57,6 @@ Both client and subscriber first `GET callout.apps.{app-slug}.discovery` (cached
 ## Notes
 
 - The correlation key into the token store is the callout-generated `id`, not the token's `jti`. `jti` is used only as the client's self-lookup key so it can fetch its own assertion.
-- The subscriber can read the token bucket only if its profile has `autoAddSessionAccess`. Keys-bucket and discovery reads are granted to any authenticated connection, but never to the anonymous union grant.
+- The subscriber can read the token bucket only if its profile has `autoAddSessionAccess`. The keys-bucket read is granted to every authenticated connection; the discovery read is granted per application to that application's authenticated connections. Neither is ever granted to the anonymous union grant.
 - Identity propagation is per application and defaults to enabled (ADR 0012). When disabled, none of the store/assertion steps happen and the `callout.apps.{app-slug}.discovery` descriptor reports `enabled: false`.
 - Trust comes from the callout's signature on the assertion, not from the subject or any client-settable header value.

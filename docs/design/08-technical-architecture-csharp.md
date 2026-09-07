@@ -250,10 +250,10 @@ The refresh cadence and fetch bounds are bootstrap settings, with a per-issuer o
 | Setting | Scope | Meaning |
 |---------|-------|---------|
 | `jwks.refreshInterval` | bootstrap (default, e.g. `5m`) | How frequently the manager proactively re-fetches each issuer's JWKS. |
-| `jwks.refreshIntervalSeconds` | per-issuer override | Overrides the default for a specific issuer (falls back to bootstrap). |
+| `issuer.refreshInterval` | per-issuer override ([04](./04-configuration.md), on the application's `issuer` block) | Duration string; overrides the default for a specific issuer (falls back to bootstrap). |
 | `jwks.fetchTimeout` | bootstrap | Hard timeout on any single discovery/JWKS fetch, so a slow IdP fails fast (fail closed). |
 | `jwks.prewarmRequired` | bootstrap (default true) | If true, all issuers must prewarm before `Serving`; if false, prewarm is best-effort and validation may lazily fetch. |
-| `jwksCacheSeconds` | per-issuer ([04](./04-configuration.md)) | Existing cache lifetime; the manager's refresh interval should be ≤ this so keys never expire between refreshes. |
+| `jwksCache` | per-issuer ([04](./04-configuration.md)) | Existing cache lifetime; the manager's refresh interval should be ≤ this so keys never expire between refreshes. |
 
 The manager reuses `Microsoft.IdentityModel`'s `ConfigurationManager<OpenIdConnectConfiguration>` per issuer (its `RequestRefresh()` drives proactive updates) rather than reimplementing JWKS handling; the manager only orchestrates *when* refreshes happen and guarantees prewarm ordering. Fetch retries/backoff use Polly.
 
@@ -279,7 +279,7 @@ var tvp = new TokenValidationParameters
 {
     ValidateIssuer = true,   ValidIssuer = discovery.Issuer,
     ValidateAudience = issuer.ValidateAudience,   ValidAudiences = issuer.Audience,
-    ValidateLifetime = true, ClockSkew = TimeSpan.FromSeconds(issuer.ClockSkewSeconds), // default 60
+    ValidateLifetime = true, ClockSkew = issuer.ClockSkew, // default 60s
     RequireSignedTokens = true, RequireExpirationTime = true,
     ValidAlgorithms = issuer.AllowedAlgorithms,   // asymmetric set; HS*/none impossible per ADR 0016
     IssuerSigningKeys = jwks.CurrentKeys(issuer),  // from the cache manager, by kid
@@ -338,9 +338,9 @@ Two runtime failures where the data is fine but the service can't trust it is cu
 
 | Staleness (`now - lastSuccessfulSync`) | `config-source` health | Serving? | `/readyz` |
 |----------------------------------------|------------------------|----------|-----------|
-| < `warnStalenessSeconds` | `Healthy` (Fresh) | yes | 200 |
-| ≥ warn, < `maxStalenessSeconds` | `Degraded` + alert | yes (Stale) | 200 |
-| ≥ `maxStalenessSeconds` | `Unhealthy` | yes, still last-good | 503 |
+| < `warnStaleness` | `Healthy` (Fresh) | yes | 200 |
+| ≥ warn, < `maxStaleness` | `Degraded` + alert | yes (Stale) | 200 |
+| ≥ `maxStaleness` | `Unhealthy` | yes, still last-good | 503 |
 
 At the hard bound the instance becomes **not-ready but keeps serving last-good**: the orchestrator stops routing to it / restarts it (a fresh start relists from scratch and self-heals) without the running instance denying every connect. Stale is not invalid, so shedding via readiness is proportionate; failing closed on valid data would be a self-inflicted outage. Relist/rewatch runs continuously with capped backoff (Polly); a successful sync clears staleness. This adds a `Fresh → Stale(Degraded) → Stale(Unready)` freshness substate to `Serving` and the metrics `config_last_sync_timestamp`, `config_staleness_seconds`, `watch_reconnects_total`, `watch_relists_total`, `watch_failures_total`.
 

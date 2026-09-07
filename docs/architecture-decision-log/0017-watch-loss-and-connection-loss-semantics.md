@@ -32,9 +32,9 @@ Config-watch loss does **not** stop the service answering: last-good is still va
 
 | Staleness (`now - lastSuccessfulSync`) | `config-source` health | Serving? | `/readyz` |
 |----------------------------------------|------------------------|----------|-----------|
-| < `warnStalenessSeconds` | `Healthy` | yes (Fresh) | 200 |
-| ≥ warn, < `maxStalenessSeconds` | `Degraded` + alert | yes (Stale) | 200 |
-| ≥ `maxStalenessSeconds` | `Unhealthy` | **yes, still last-good** | **503** |
+| < `warnStaleness` | `Healthy` | yes (Fresh) | 200 |
+| ≥ warn, < `maxStaleness` | `Degraded` + alert | yes (Stale) | 200 |
+| ≥ `maxStaleness` | `Unhealthy` | **yes, still last-good** | **503** |
 
 - **At the hard bound, become not-ready but keep serving last-good.** Flipping `/readyz` to 503 lets the orchestrator stop routing to / restart this instance (another replica or a fresh start takes over and relists from scratch), **without** the running instance suddenly denying every connect. This is the proportionate lever: stale is not wrong, so shed via readiness, don't fail closed on valid data.
 - **Always recover.** Relist/rewatch runs continuously with capped exponential backoff; a successful sync clears staleness and returns to `Healthy`/Fresh.
@@ -48,7 +48,7 @@ Stale ≠ invalid. The last-good config is valid and was authored deliberately; 
 - Two clear, different postures: connection loss = don't answer (fail closed, inherent); watch loss = keep answering last-good, alert, and become not-ready past a bound.
 - `Serving` gains an orthogonal freshness substate (`Fresh → Stale(Degraded) → Stale(Unready)`) driven purely by `lastSuccessfulSync` age; it does not change the authorization logic.
 - The hard staleness bound is a readiness signal, not a kill switch, so a stale instance never causes a self-inflicted auth outage; the orchestrator resolves it.
-- New per-source config (`warnStalenessSeconds`, `maxStalenessSeconds`, reconnect backoff) and new observability (`config_last_sync_timestamp`, `config_staleness_seconds`, `watch_reconnects_total`, `watch_relists_total`, `watch_failures_total`).
+- New per-source config (`warnStaleness`, `maxStaleness`, `reconnectBackoff` — duration strings) and new observability (`config_last_sync_timestamp`, `config_staleness_seconds`, `watch_reconnects_total`, `watch_relists_total`, `watch_failures_total`).
 - The `config-source` health check now reports `lastSuccessfulSync` and current staleness in its `data`, so operators can see drift directly.
 - Requires each source provider to expose a liveness/`lastSuccessfulSync` signal, not just a change callback ([ADR 0005](./0005-config-abstraction-and-sources.md) provider contract gains a health surface).
 

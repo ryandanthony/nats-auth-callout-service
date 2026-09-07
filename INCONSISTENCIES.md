@@ -3,6 +3,33 @@
 Review of `docs/design/*` and `docs/architecture-decision-log/*` on 2026-09-06.
 Ordered by severity. File references use design doc numbers (e.g. "doc 03") and ADR numbers.
 
+**Status: all 17 resolved on 2026-09-07.** Decisions:
+
+1. Discovery read granted unconditionally per-app (doc 03/07, ADR 0012 fixed).
+2. Per-profile fallback expiry removed; the global anonymous expiry is the sole
+   tokenless expiry source (ADR 0016 makes `exp` mandatory).
+3. Keys-bucket read is unconditional on every authenticated grant.
+4. ADR 0007 model and doc 02 diagram updated to match ADRs 0014/0016.
+5. Discovery scope is per-application (docs 02/05/06 corrected).
+6. Doc 05 updated to the keyset model, cites ADR 0014.
+7. Doc 07 table now shows logical and physical names; grants use physical subjects.
+8. `current` listed as a reserved key in ADR 0013; forbidden as a `kid`.
+9. Added `grant_construction_failed`; anonymous grants emit `reason: anonymous`
+   (`no_token` removed).
+10. `jti` fallback hardcoded to `sub`, "configurable" dropped.
+11. `docs/README.md` rewritten; dead links removed (also from the ADR index).
+12. `docs/design/README.md` refreshed (doc 07/08 rows, ADRs 0012–0017 listed).
+13. Per-issuer override is `issuer.refreshInterval`; all durations unified as
+    duration strings (`clockSkew`, `jwksCache`, `warnStaleness`, `maxStaleness`,
+    `anonymous.expiry`, ...).
+14. `reconnectBackoff` added to the doc 09 bootstrap example.
+15. Bootstrap changes are restart-only; ADR 0014 reworded.
+16. ADR 0012 descriptor example updated to physical bucket names.
+17. ADR 0002 reworded: anonymous only when no token is presented.
+
+Original findings follow for the record.
+
+
 ## High — functional contradictions
 
 ### 1. Discovery-read paradox for apps with identity propagation disabled

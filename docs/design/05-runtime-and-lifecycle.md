@@ -1,6 +1,6 @@
 # 05 — Runtime and lifecycle
 
-Grounds: [ADR 0006](../architecture-decision-log/0006-config-reload-and-failure-semantics.md) (reload and failure semantics), [ADR 0008](../architecture-decision-log/0008-publish-auth-outcome-events.md) (events), [ADR 0010](../architecture-decision-log/0010-session-jwt-store-in-kv.md) / [ADR 0011](../architecture-decision-log/0011-signed-identity-assertion.md) (token store, assertions), plus observability that ties the design together.
+Grounds: [ADR 0006](../architecture-decision-log/0006-config-reload-and-failure-semantics.md) (reload and failure semantics), [ADR 0008](../architecture-decision-log/0008-publish-auth-outcome-events.md) (events), [ADR 0010](../architecture-decision-log/0010-session-jwt-store-in-kv.md) / [ADR 0011](../architecture-decision-log/0011-signed-identity-assertion.md) (token store, assertions), [ADR 0014](../architecture-decision-log/0014-key-rotation-orchestration.md) (assertion keyset rotation), plus observability that ties the design together.
 
 ## Service state machine
 
@@ -51,7 +51,7 @@ Rules (ADR 0006):
 
 - The service signs every minted user JWT and every authorization response with the **issuer signing seed** (the single account signing key configured as the NATS `auth_callout` issuer). Applications differ by target account, not by signing key.
 - The service authenticates its own NATS connection with the **service user seed** so it may subscribe to the callout subject, publish events, and write the token/keys KV buckets. Both seeds come from the bootstrap layer as secret references.
-- When identity assertions are enabled, a separate **assertion signing key** (bootstrap secret ref) signs assertions, and its public key is published to the keys bucket; it rotates independently of the issuer seed (ADR 0011).
+- When identity assertions are enabled, a separate **assertion keyset** (bootstrap secret refs, ADR 0014) signs assertions: exactly one key is active (the signer, its `kid` stamped in each assertion), the rest are verify-only, and all public keys are published to the keys bucket. The keyset rotates independently of the issuer seed via add-and-promote / overlap / retire (ADR 0011, ADR 0014).
 
 ## Identity stores (ADR 0010, 0011)
 
@@ -69,10 +69,10 @@ flowchart LR
 
 - **Token bucket** `callout.apps.{app-slug}.oidc-tokens.{id}`: stores the client's OIDC access token keyed by the callout-generated id, TTL matched to the token; a reconnect yields a new id and record. Readable only by profiles with `autoAddSessionAccess` for that application. Anonymous connections write no record.
 - **Id-lookup bucket** `callout.apps.{app-slug}.assertions.{jti}`: stores the client's signed identity assertion, keyed by the client's token `jti` so the client can fetch its own assertion. Each client may read only its own entry.
-- **Keys bucket** `callout.assertion-keys.{kid}`: public verification keys only, callout is the sole writer, read access auto-granted to every authenticated connection but not to anonymous.
-- **Discovery bucket** `callout.apps.{app-slug}.discovery`: per-application discovery descriptor (secret-free JSON) stating whether identity propagation is enabled and, if so, the header and bucket names plus current `kid` (ADR 0012). Callout is the sole writer; read auto-granted to every authenticated connection, not to anonymous.
+- **Keys bucket** `callout.assertion-keys.{kid}` (plus the `current` pointer): public verification keys for the whole keyset (ADR 0014), callout is the sole writer, read access auto-granted to every authenticated connection but not to anonymous.
+- **Discovery bucket** `callout.apps.{app-slug}.discovery`: per-application discovery descriptor (secret-free JSON) stating whether identity propagation is enabled and, if so, the header and bucket names plus current `kid` (ADR 0012). Callout is the sole writer; read granted per application to that application's authenticated connections, not to anonymous.
 
-Identity propagation is **per application** (ADR 0012), default enabled. When an application disables it, the callout writes no token or assertion records for that app and adds no keys-bucket read to its grants; the discovery descriptor still publishes `enabled: false` so clients and subscribers can discover this at runtime.
+Identity propagation is **per application** (ADR 0012), default enabled. When an application disables it, the callout writes no token or assertion records for that app; keys-bucket and discovery reads are still granted, and the discovery descriptor still publishes `enabled: false` so clients and subscribers can discover this at runtime.
 
 ## Auth outcome events (ADR 0008)
 
@@ -95,7 +95,7 @@ Event payload (versioned, secret-free):
 - `schemaVersion`
 - `timestamp`
 - `outcome`: `success` | `failure`
-- `reason`: a stable reason code (e.g. `no_token`, `invalid_token`, `no_issuer_match`, `no_app_match`, `ambiguous_app`, `no_profile_match`, `granted`)
+- `reason`: a stable reason code (e.g. `anonymous`, `invalid_token`, `no_issuer_match`, `no_app_match`, `ambiguous_app`, `no_profile_match`, `grant_construction_failed`, `granted`). An anonymous grant emits `outcome: success, reason: anonymous`. `grant_construction_failed` covers denials during grant construction: a `required` template variable with no value or an unsafe transformed value (ADR 0009).
 - `application`: name (absent when no application was selected)
 - `profile`: matched profile name (on success)
 - `principal`: identifier such as `sub` or `azp` (never the raw token)

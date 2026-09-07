@@ -51,7 +51,7 @@ Published best-effort per decision ([ADR 0008](../architecture-decision-log/0008
 | `schemaVersion` | integer | yes | `1`. Consumers reject unknown majors. |
 | `timestamp` | RFC 3339 string | yes | Decision time, UTC. |
 | `outcome` | enum | yes | `success` \| `failure`. |
-| `reason` | enum string | yes | Stable reason code: `no_token`, `invalid_token`, `no_issuer_match`, `no_app_match`, `ambiguous_app`, `no_profile_match`, `granted`. New codes are **additive** (no bump); consumers treat unknown codes as generic failure. |
+| `reason` | enum string | yes | Stable reason code: `anonymous`, `invalid_token`, `no_issuer_match`, `no_app_match`, `ambiguous_app`, `no_profile_match`, `grant_construction_failed`, `granted`. An anonymous grant emits `outcome: success, reason: anonymous`; `grant_construction_failed` covers required-variable and unsafe-value denials (ADR 0009). New codes are **additive** (no bump); consumers treat unknown codes as generic failure. |
 | `application` | string | no | Absent when no application was selected. |
 | `profile` | string | no | Present on success. |
 | `principal` | string | no | `sub`/`azp`-style identifier, never the raw token. |
@@ -115,11 +115,11 @@ targetAccount: NOTES
 issuer:
   authority: https://id.ants.zone/realms/main
   jwksUri: null                   # optional override; else OIDC discovery
-  jwksCacheSeconds: 300
-  refreshIntervalSeconds: null    # optional; overrides bootstrap jwks.refreshInterval
+  jwksCache: 5m                   # cache lifetime (duration string)
+  refreshInterval: null           # optional; overrides bootstrap jwks.refreshInterval
   validateAudience: true          # default true; if true, audience is required (ADR 0016)
   audience: [nats]                # one or more accepted audiences
-  clockSkewSeconds: 60            # default 60, capped at 300 (ADR 0016)
+  clockSkew: 60s                  # default 60s, capped at 300s (ADR 0016)
   allowedAlgorithms: [RS256, ES256]  # asymmetric only; HS*/none rejected at load (ADR 0016)
 match:                            # optional app selector among same-issuer apps
   azp: [notes-web]
@@ -140,7 +140,6 @@ profiles:
       subscribe: [notes.{tenant}.>]
     nameClaim: sub
     autoAddSessionAccess: false
-    fallbackExpirySeconds: 3600
     variables:
       - name: tenant
         claim: tenant_id
@@ -180,8 +179,9 @@ assertionKeys:                       # keyset, ADR 0014
 source:
   kind: files                        # or k8s
   directory: /config/apps
-  warnStalenessSeconds: 60           # config-source Degraded + alert (ADR 0017)
-  maxStalenessSeconds: 900           # config-source Unhealthy => /readyz 503, still serving last-good
+  warnStaleness: 60s                 # config-source Degraded + alert (ADR 0017)
+  maxStaleness: 15m                  # config-source Unhealthy => /readyz 503, still serving last-good
+  reconnectBackoff: 5s               # capped relist/rewatch backoff (ADR 0017)
 jwks:                                # JWKS cache manager (doc 08)
   refreshInterval: 5m                # proactive re-fetch cadence per issuer
   fetchTimeout: 5s                   # hard timeout on any single discovery/JWKS fetch (fail closed)
@@ -192,11 +192,11 @@ concurrency:                         # in-process parallelism (doc 08)
   queueCapacity: 256                 # optional accept-queue depth before shedding
 anonymous:
   targetAccount: ANON
-  expirySeconds: 300
+  expiry: 5m                         # sole expiry source for anonymous grants
   events: { success: anon.auth.success, failure: anon.auth.failure }
 ```
 
-The `jwks` block configures the [JWKS cache manager](./08-technical-architecture-csharp.md#jwks-cache-manager-keeping-the-idp-off-the-hot-path); a per-issuer `refreshIntervalSeconds` on an application's `issuer` block overrides `jwks.refreshInterval`, and `jwksCacheSeconds` (per issuer) bounds the cache lifetime, which should be ≥ the refresh interval so keys never expire between refreshes.
+The `jwks` block configures the [JWKS cache manager](./08-technical-architecture-csharp.md#jwks-cache-manager-keeping-the-idp-off-the-hot-path); a per-issuer `refreshInterval` on an application's `issuer` block overrides `jwks.refreshInterval`, and `jwksCache` (per issuer) bounds the cache lifetime, which should be ≥ the refresh interval so keys never expire between refreshes.
 
 ## 4. Kubernetes CRD
 
@@ -221,10 +221,10 @@ spec:
   targetAccount: NOTES
   issuer:
     authority: https://id.ants.zone/realms/main
-    jwksCacheSeconds: 300
+    jwksCache: 5m
     validateAudience: true
     audience: [nats]
-    clockSkewSeconds: 60
+    clockSkew: 60s
     allowedAlgorithms: [RS256, ES256]
   match:
     azp: [notes-web]
@@ -243,7 +243,6 @@ spec:
         subscribe: [notes.{tenant}.>]
       nameClaim: sub
       autoAddSessionAccess: false
-      fallbackExpirySeconds: 3600
       variables:
         - name: tenant
           claim: tenant_id

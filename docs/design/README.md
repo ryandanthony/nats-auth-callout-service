@@ -18,14 +18,14 @@ It is generic and data-driven: no application-specific subjects or claims are co
 | [04-configuration.md](./04-configuration.md) | Two config layers, sources, canonical model, secrets |
 | [05-runtime-and-lifecycle.md](./05-runtime-and-lifecycle.md) | State machine, reload, failure handling, identity stores, observability, events |
 | [06-identity-propagation-sequence.md](./06-identity-propagation-sequence.md) | End-to-end sequence: how client, subscriber, callout, and NATS interact so a subscriber can obtain the client's OIDC JWT |
-| [07-kv-storage.md](./07-kv-storage.md) | Authoritative reference for the KV buckets (token store, id lookup, assertion keys): keys, values, writers, readers, TTLs |
+| [07-kv-storage.md](./07-kv-storage.md) | Authoritative reference for the KV buckets (token store, id lookup, assertion keys, discovery): keys, values, writers, readers, TTLs |
 | [09-schemas-and-versioning.md](./09-schemas-and-versioning.md) | Concrete schemas for events, discovery descriptor, config files (JSON/YAML), and the Kubernetes CRD, plus the versioning strategy for each |
 
 The above are language-agnostic. One implementation-specific doc maps them to a concrete stack:
 
 | Document | Covers |
 |----------|--------|
-| [08-technical-architecture-csharp.md](./08-technical-architecture-csharp.md) | C# / .NET 10 stack: NATS.Net + NATS.Jwt/NKeys, KubernetesClient CRD watch, OIDC/JWKS validation, project layout, and open gaps to decide |
+| [08-technical-architecture-csharp.md](./08-technical-architecture-csharp.md) | C# / .NET 10 stack: NATS.Net + NATS.Jwt/NKeys, KubernetesClient CRD watch, OIDC/JWKS validation, project layout, concurrency, health, container/supply chain |
 
 ## Grounding decisions
 
@@ -42,6 +42,12 @@ Every element traces to an ADR (see the [ADR log](../architecture-decision-log/R
 - [ADR 0009](../architecture-decision-log/0009-templated-subject-variables.md) — templated subject variables bound to transformed claims
 - [ADR 0010](../architecture-decision-log/0010-session-jwt-store-in-kv.md) — callout-maintained token store keyed by a generated id
 - [ADR 0011](../architecture-decision-log/0011-signed-identity-assertion.md) — callout-signed identity assertion (sole identity-propagation mechanism)
+- [ADR 0012](../architecture-decision-log/0012-identity-propagation-toggle-and-discovery.md) — per-application identity-propagation toggle and discovery descriptor
+- [ADR 0013](../architecture-decision-log/0013-kv-bucket-naming-contract.md) — KV bucket naming contract
+- [ADR 0014](../architecture-decision-log/0014-key-rotation-orchestration.md) — key rotation orchestration
+- [ADR 0015](../architecture-decision-log/0015-schema-versioning-strategy.md) — schema versioning strategy
+- [ADR 0016](../architecture-decision-log/0016-token-validation-parameters.md) — token validation parameters
+- [ADR 0017](../architecture-decision-log/0017-watch-loss-and-connection-loss-semantics.md) — watch-loss and connection-loss semantics
 
 ## Principles
 

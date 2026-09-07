@@ -18,9 +18,12 @@ classDiagram
   class Issuer {
     authority
     jwksUri (optional)
-    jwksCacheSeconds
+    jwksCache
+    refreshInterval (optional)
     validateAudience
-    audience (optional)
+    audiences[] (optional)
+    clockSkew
+    allowedAlgorithms[]
   }
   class Profile {
     name
@@ -31,7 +34,6 @@ classDiagram
     publishTemplates[]
     subscribeTemplates[]
     autoAddSessionAccess
-    fallbackExpirySeconds
   }
   class TemplateVariable {
     name
@@ -67,7 +69,7 @@ An independent authorization domain. It owns an issuer, a NATS target account, a
 
 ### Issuer
 
-The OIDC authority whose JWKS validates the application's tokens. The `iss` claim both selects candidate applications and chooses the signing keys. Audience *validation* is a separate, independent setting from audience-based routing.
+The OIDC authority whose JWKS validates the application's tokens. The `iss` claim both selects candidate applications and chooses the signing keys. Audience *validation* is a separate, independent setting from audience-based routing; validation parameters (clock skew, algorithm allow-list, audiences) are strict, issuer-level, and never profile-configurable (ADR 0016).
 
 ### Profile
 
@@ -149,7 +151,7 @@ Subscriber: fetch the assertion verification key from the keys bucket (cached), 
 
 Trust comes from the callout's signature, not the subject. A generated `id` (not `jti` or any provider claim) is the correlation key, so the design is provider-neutral. `jti` is used only as the client's self-lookup key in `callout.apps.{app-slug}.assertions`. Identity headers use the `Callout-` prefix, never the reserved `Nats-` prefix. Anonymous connections select no application and get no token record or assertion.
 
-Identity propagation is a **per-application toggle** (ADR 0012), default enabled. A disabled application does none of the token/assertion storage and grants no keys-bucket read. Clients and subscribers discover an application's behavior at runtime by reading a discovery descriptor at `callout.apps.{app-slug}.discovery` (readable by any authenticated connection), which reports `enabled` plus the header, bucket names, and current `kid`. See [07 — KV storage](./07-kv-storage.md) for the authoritative bucket reference.
+Identity propagation is a **per-application toggle** (ADR 0012), default enabled. A disabled application does none of the token/assertion storage; keys-bucket and per-application discovery reads are still granted to every authenticated connection (ADR 0011, 0012). Clients and subscribers discover an application's behavior at runtime by reading a discovery descriptor at `callout.apps.{app-slug}.discovery` (readable by that application's authenticated connections), which reports `enabled` plus the header, bucket names, and current `kid`. See [07 — KV storage](./07-kv-storage.md) for the authoritative bucket reference.
 
 ## Anonymous grant is a union (ADR 0004)
 

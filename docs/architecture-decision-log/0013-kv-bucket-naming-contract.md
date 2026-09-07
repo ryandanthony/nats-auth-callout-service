@@ -36,7 +36,10 @@ Define an explicit, deterministic mapping from each logical store to a **(bucket
 | OIDC token store (0010) | `callout_apps_{app-slug}_oidc_tokens` | `{id}` | client OIDC access token (JWT) |
 | Id-lookup / assertions (0010, 0011) | `callout_apps_{app-slug}_assertions` | `{jti}` | client's signed identity assertion |
 | Assertion keys (0011) | `callout_assertion_keys` | `{kid}` | assertion verification public key |
+| Assertion keys — current pointer (0011, 0014) | `callout_assertion_keys` | `current` (reserved) | the active `kid` |
 | Discovery descriptor (0012) | `callout_apps_{app-slug}_discovery` | `descriptor` | per-app discovery JSON (secret-free) |
+
+`current` is a **reserved key** in the assertion-keys bucket: it holds the pointer to the active signer's `kid` (ADR 0011, ADR 0014). Consequently `current` is a **forbidden `kid` value** — config-load validation rejects any keyset entry whose `kid` is `current` (fail closed), so the pointer can never collide with a per-key entry.
 
 `{app-slug}` is the stable, collision-free application slug validated at config load ([ADR 0010](./0010-session-jwt-store-in-kv.md)); the same slug value is reused verbatim in the bucket name.
 
