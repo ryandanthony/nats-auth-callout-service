@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Canonical config model, Grant, ClaimMatch, SecretRef. No transport, storage,
+       or k8s package references (doc 08 reference-isolation invariant). Filled in by P02.
+       No project references: this is the leaf of the dependency graph. -->
+
+</Project>

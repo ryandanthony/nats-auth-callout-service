@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Decision core: pipeline, selectors, matcher, minter. No transport, storage,
+       or k8s package references (doc 08 reference-isolation invariant). -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\AuthCallout.Contracts\AuthCallout.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

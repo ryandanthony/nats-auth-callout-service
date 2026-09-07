@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="NATS.Net" />
+    <PackageReference Include="NATS.Jwt" />
+    <PackageReference Include="NATS.NKeys" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AuthCallout.Contracts\AuthCallout.Contracts.csproj" />
+    <ProjectReference Include="..\AuthCallout.Core\AuthCallout.Core.csproj" />
+  </ItemGroup>
+
+</Project>

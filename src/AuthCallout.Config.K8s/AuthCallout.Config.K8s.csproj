@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Isolated: KubernetesClient is referenced only here, not in Core/Contracts (ADR 0005). -->
+
+  <ItemGroup>
+    <PackageReference Include="KubernetesClient" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AuthCallout.Contracts\AuthCallout.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>
