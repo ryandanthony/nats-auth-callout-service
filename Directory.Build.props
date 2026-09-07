@@ -1,0 +1,28 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <!-- FestinaLente.CodeStandards bundles StyleCop.Analyzers, SonarAnalyzer.CSharp, Meziantou.Analyzer,
+       Microsoft.CodeAnalysis.NetAnalyzers, Roslynator, and Microsoft.VisualStudio.Threading.Analyzers.
+       Restore requires the `github` source in nuget.config (festina-lente-io GitHub Packages feed),
+       authenticated locally or in CI (see README "Restore" section). Do not add StyleCop.Analyzers
+       separately here, it is already bundled and would create duplicate analyzer diagnostics. -->
+  <ItemGroup>
+    <PackageReference Include="FestinaLente.CodeStandards" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- StyleCop configuration - our stylecop.json; NuGet package copy removed in Directory.Build.targets -->
+  <ItemGroup>
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)stylecop.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="GitVersion.MsBuild" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

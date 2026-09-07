@@ -1,0 +1,31 @@
+# .NET build output
+bin/
+obj/
+out/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+
+# Test results
+TestResults/
+*.trx
+coverage.cobertura.xml
+coverage-report/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Aspire / dev secrets
+dev/**/appsettings.*.local.json
+
+# Logs
+*.log
