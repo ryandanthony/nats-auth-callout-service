@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ryandanthony.github.io/nats-auth-callout-service/schemas/discovery/descriptor/v1.json",
+  "title": "Discovery descriptor v1",
+  "description": "Per-application discovery descriptor published to callout_apps_{slug}_discovery (ADR 0012, ADR 0013). Secret-free. See docs/design/09-schemas-and-versioning.md #2.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "app", "identityPropagation"],
+  "properties": {
+    "schemaVersion": {
+      "description": "Schema major version. Consumers reject unknown majors.",
+      "const": 1
+    },
+    "app": {
+      "description": "Application slug (ADR 0013).",
+      "type": "string"
+    },
+    "identityPropagation": {
+      "description": "Identity propagation state and, when enabled, the discoverable bucket/header/kid facts.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "description": "Master toggle (ADR 0012).",
+          "type": "boolean"
+        },
+        "header": {
+          "description": "Message header name carrying the identity assertion. Present when enabled.",
+          "type": "string"
+        },
+        "oidcTokenBucket": {
+          "description": "Physical OIDC token-store bucket name (ADR 0013). Present when enabled.",
+          "type": "string"
+        },
+        "assertionBucket": {
+          "description": "Physical assertions bucket name (ADR 0013). Present when enabled.",
+          "type": "string"
+        },
+        "assertionKeysBucket": {
+          "description": "Physical assertion-keys bucket name (ADR 0013). Present when enabled.",
+          "type": "string"
+        },
+        "currentKid": {
+          "description": "The active assertion signing key's kid (ADR 0014). Present when enabled.",
+          "type": "string"
+        }
+      },
+      "if": {
+        "properties": { "enabled": { "const": true } }
+      },
+      "then": {
+        "required": ["enabled", "header", "oidcTokenBucket", "assertionBucket", "assertionKeysBucket", "currentKid"]
+      },
+      "else": {
+        "required": ["enabled"]
+      }
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ryandanthony.github.io/nats-auth-callout-service/schemas/events/auth-outcome/v1.json",
+  "title": "Auth outcome event v1",
+  "description": "Auth outcome event published best-effort per decision (ADR 0008). Secret-free. See docs/design/09-schemas-and-versioning.md #1.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "timestamp", "outcome", "reason"],
+  "properties": {
+    "schemaVersion": {
+      "description": "Schema major version. Consumers reject unknown majors.",
+      "const": 1
+    },
+    "timestamp": {
+      "description": "Decision time, UTC, RFC 3339.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "outcome": {
+      "description": "Whether the decision was a grant or a denial.",
+      "type": "string",
+      "enum": ["success", "failure"]
+    },
+    "reason": {
+      "description": "Stable reason code. New codes are additive (no schemaVersion bump); consumers treat unknown codes as generic failure.",
+      "type": "string",
+      "enum": [
+        "anonymous",
+        "invalid_token",
+        "no_issuer_match",
+        "no_app_match",
+        "ambiguous_app",
+        "no_profile_match",
+        "grant_construction_failed",
+        "granted"
+      ]
+    },
+    "application": {
+      "description": "Absent when no application was selected.",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Present on success.",
+      "type": "string"
+    },
+    "principal": {
+      "description": "sub/azp-style identifier, never the raw token.",
+      "type": "string"
+    },
+    "issuer": {
+      "description": "Original OIDC issuer.",
+      "type": "string"
+    },
+    "userNKey": {
+      "description": "The connection's user NKey.",
+      "type": "string"
+    }
+  }
+}

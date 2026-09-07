@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ryandanthony.github.io/nats-auth-callout-service/schemas/config/bootstrap/v1.json",
+  "title": "Bootstrap config file v1",
+  "description": "The non-hot-reloaded bootstrap layer (doc 04 Two layers, ADR 0005/0007). Strict: unknown fields rejected. See docs/design/09-schemas-and-versioning.md #3 Bootstrap file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "natsUrl", "issuerSeed", "source", "jwks", "concurrency", "anonymous"],
+  "$defs": {
+    "secretRef": {
+      "description": "A secret reference (doc 04 Secrets, ADR 0005).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["inline", "file", "k8sSecret", "vault"] },
+        "value": { "type": "string" },
+        "path": { "type": "string" },
+        "name": { "type": "string" },
+        "key": { "type": "string" }
+      }
+    },
+    "eventSubjects": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "success": { "type": "string" },
+        "failure": { "type": "string" }
+      }
+    },
+    "assertionKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kid", "key", "active"],
+      "properties": {
+        "kid": { "type": "string", "not": { "const": "current" } },
+        "key": { "$ref": "#/$defs/secretRef" },
+        "active": { "type": "boolean" }
+      }
+    },
+    "source": {
+      "description": "The active routing/apps provider selection + shared watch-health thresholds (ADR 0005, ADR 0017).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "warnStaleness", "maxStaleness", "reconnectBackoff"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["files", "k8s", "postgres"] },
+        "directory": { "type": "string" },
+        "labelSelector": { "type": "string" },
+        "connectionString": { "$ref": "#/$defs/secretRef" },
+        "pollInterval": { "type": "string", "default": "30s" },
+        "notifyChannel": { "type": "string", "default": "auth_applications_changed" },
+        "warnStaleness": { "type": "string" },
+        "maxStaleness": { "type": "string" },
+        "reconnectBackoff": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "files" } } },
+          "then": { "required": ["directory"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "k8s" } } },
+          "then": { "required": ["labelSelector"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "postgres" } } },
+          "then": { "required": ["connectionString"] }
+        }
+      ]
+    }
+  },
+  "properties": {
+    "schemaVersion": {
+      "description": "Bootstrap file schema major version.",
+      "const": 1
+    },
+    "natsUrl": {
+      "description": "The NATS server URL the service connects to.",
+      "type": "string"
+    },
+    "issuerSeed": { "$ref": "#/$defs/secretRef" },
+    "serviceUserSeed": { "$ref": "#/$defs/secretRef" },
+    "xkeySeed": {
+      "description": "Optional xkey curve seed for encrypted $SYS.REQ.USER.AUTH traffic (ADR 0018, D14).",
+      "$ref": "#/$defs/secretRef"
+    },
+    "assertionKeys": {
+      "description": "The assertion signing keyset (ADR 0011, ADR 0014). Exactly one entry must be active.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/assertionKey" }
+    },
+    "source": { "$ref": "#/$defs/source" },
+    "jwks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["refreshInterval", "fetchTimeout", "prewarmRequired"],
+      "properties": {
+        "refreshInterval": { "type": "string" },
+        "fetchTimeout": { "type": "string" },
+        "prewarmRequired": { "type": "boolean" }
+      }
+    },
+    "concurrency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxDegreeOfParallelism", "perRequestTimeout"],
+      "properties": {
+        "maxDegreeOfParallelism": { "type": "integer", "minimum": 1 },
+        "perRequestTimeout": { "type": "string" },
+        "queueCapacity": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "anonymous": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetAccount", "expiry"],
+      "properties": {
+        "targetAccount": { "type": "string" },
+        "expiry": { "type": "string" },
+        "events": { "$ref": "#/$defs/eventSubjects" }
+      }
+    }
+  }
+}

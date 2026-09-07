@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ryandanthony.github.io/nats-auth-callout-service/schemas/config/application/v1.json",
+  "title": "Application config file v1",
+  "description": "One per-application config file (JSON/YAML), the files source's unit (ADR 0005). Strict: unknown fields rejected to catch typos early. See docs/design/09-schemas-and-versioning.md #3 and docs/design/04-configuration.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "name", "targetAccount", "issuer", "profiles"],
+  "$defs": {
+    "claimMatch": {
+      "description": "A claim-path -> accepted-values predicate map (doc 02 Claim match). Keys are arbitrary claim paths, so this is intentionally not additionalProperties:false.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
+    "grant": {
+      "description": "A publish/subscribe subject-pattern grant.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "publish": { "type": "array", "items": { "type": "string" } },
+        "subscribe": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "eventSubjects": {
+      "description": "Explicit auth-outcome event subjects (ADR 0008). No templated form.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "success": { "type": "string" },
+        "failure": { "type": "string" }
+      }
+    },
+    "transform": {
+      "description": "One transform-pipeline step (ADR 0009): a bare name for no-argument transforms, or a single-property object for argument-taking ones.",
+      "oneOf": [
+        { "type": "string", "enum": ["lowercase", "uppercase", "sanitize", "hash", "require-safe"] },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["replace"],
+          "properties": {
+            "replace": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["from", "to"],
+              "properties": {
+                "from": { "type": "string", "minLength": 1 },
+                "to": { "type": "string" }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["prefix"],
+          "properties": { "prefix": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["suffix"],
+          "properties": { "suffix": { "type": "string" } }
+        }
+      ]
+    },
+    "templateVariable": {
+      "description": "A named template variable bound to a claim (ADR 0009).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "claim"],
+      "properties": {
+        "name": { "type": "string" },
+        "claim": { "type": "string" },
+        "required": { "type": "boolean" },
+        "transforms": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/transform" }
+        }
+      }
+    },
+    "profile": {
+      "description": "A named permission profile (ADR 0001).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "match", "grant", "nameClaim"],
+      "properties": {
+        "name": { "type": "string" },
+        "match": { "$ref": "#/$defs/claimMatch" },
+        "grant": { "$ref": "#/$defs/grant" },
+        "nameClaim": { "type": "string" },
+        "autoAddSessionAccess": { "type": "boolean" },
+        "variables": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/templateVariable" }
+        },
+        "publishTemplates": { "type": "array", "items": { "type": "string" } },
+        "subscribeTemplates": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "issuer": {
+      "description": "OIDC issuer + strict token-validation parameters (ADR 0016).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "jwksCache"],
+      "properties": {
+        "authority": { "type": "string" },
+        "jwksUri": { "type": ["string", "null"] },
+        "jwksCache": { "type": "string" },
+        "refreshInterval": { "type": ["string", "null"] },
+        "validateAudience": { "type": "boolean", "default": true },
+        "audience": { "type": "array", "items": { "type": "string" } },
+        "clockSkew": { "type": "string", "default": "60s" },
+        "allowedAlgorithms": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256", "PS384", "PS512"]
+          }
+        }
+      }
+    }
+  },
+  "properties": {
+    "schemaVersion": {
+      "description": "File schema major version. Missing treated as 1 during migration window, then rejected; newer than supported rejects the batch.",
+      "const": 1
+    },
+    "name": {
+      "description": "Application name, unique across the aggregate.",
+      "type": "string",
+      "minLength": 1
+    },
+    "targetAccount": {
+      "description": "NATS account minted users for this application are placed in.",
+      "type": "string",
+      "minLength": 1
+    },
+    "issuer": { "$ref": "#/$defs/issuer" },
+    "match": { "$ref": "#/$defs/claimMatch" },
+    "identityPropagation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "anonymousProfile": { "$ref": "#/$defs/grant" },
+    "events": { "$ref": "#/$defs/eventSubjects" },
+    "profiles": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/profile" }
+    }
+  }
+}
