@@ -9,6 +9,20 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AuthCallout.Contracts\AuthCallout.Contracts.csproj" />
+    <!-- Reuses ApplicationFileMapper: P12's JSONB `spec` document is the exact file schema v1
+         shape (doc 09 §3), so the same strict deserializer as the files source is the mapping
+         layer here too (ADR 0007: one shape, one validator). Coordinator-approved (P12 DM):
+         P11 duplicated instead because the CRD spec genuinely differs (no schemaVersion/name),
+         but P12's document is byte-for-byte the file shape, so reuse over a third copy. -->
+    <ProjectReference Include="..\AuthCallout.Config.Files\AuthCallout.Config.Files.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Embed the shared db/migrations/*.sql scripts (owned by this packet) under a stable
+         logical name so EmbeddedMigrationSource can enumerate and order them by filename. -->
+    <EmbeddedResource Include="..\..\db\migrations\*.sql">
+      <LogicalName>AuthCallout.Config.Postgres.Migrations.Sql.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>
