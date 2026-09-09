@@ -105,8 +105,11 @@ public sealed class FileRoutingConfigProvider : IRoutingConfigProvider
     public IReadOnlyList<string> LastWarnings => _scanner.LastWarnings;
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<RoutingConfigBatch> WatchAsync([EnumeratorCancellation] CancellationToken cancellationToken)
+    public IAsyncEnumerable<RoutingConfigBatch> WatchAsync(CancellationToken cancellationToken)
     {
+        // Guard eagerly, on the calling thread: an `async IAsyncEnumerable` method's body does
+        // not execute until the first `MoveNextAsync`, so these checks would otherwise silently
+        // wait for enumeration instead of failing the call that violates the contract.
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_watchStarted)
         {
@@ -114,7 +117,11 @@ public sealed class FileRoutingConfigProvider : IRoutingConfigProvider
         }
 
         _watchStarted = true;
+        return WatchCoreAsync(cancellationToken);
+    }
 
+    private async IAsyncEnumerable<RoutingConfigBatch> WatchCoreAsync([EnumeratorCancellation] CancellationToken cancellationToken)
+    {
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposalCts.Token);
         var token = linkedCts.Token;
 

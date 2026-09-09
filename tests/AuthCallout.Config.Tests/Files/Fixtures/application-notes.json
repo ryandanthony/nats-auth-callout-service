@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "name": "notes",
+  "targetAccount": "NOTES",
+  "issuer": {
+    "authority": "https://id.ants.zone/realms/main",
+    "jwksUri": null,
+    "jwksCache": "5m",
+    "refreshInterval": null,
+    "validateAudience": true,
+    "audience": ["nats"],
+    "clockSkew": "60s",
+    "allowedAlgorithms": ["RS256", "ES256"]
+  },
+  "match": {
+    "azp": ["notes-web"]
+  },
+  "identityPropagation": {
+    "enabled": true
+  },
+  "anonymousProfile": {
+    "publish": [],
+    "subscribe": ["notes.public.>"]
+  },
+  "events": {
+    "success": "notes.events.auth.success",
+    "failure": "notes.events.auth.failure"
+  },
+  "profiles": [
+    {
+      "name": "editor",
+      "match": {
+        "realm_access.roles": ["notes-editor"]
+      },
+      "grant": {
+        "publish": ["notes.{tenant}.>"],
+        "subscribe": ["notes.{tenant}.>"]
+      },
+      "nameClaim": "sub",
+      "autoAddSessionAccess": false,
+      "variables": [
+        {
+          "name": "tenant",
+          "claim": "tenant_id",
+          "required": true,
+          "transforms": ["lowercase", "sanitize"]
+        }
+      ],
+      "publishTemplates": ["notes.{tenant}.outbox.>"],
+      "subscribeTemplates": ["notes.{tenant}.inbox.>"]
+    }
+  ]
+}
