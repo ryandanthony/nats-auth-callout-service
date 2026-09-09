@@ -53,6 +53,31 @@ public sealed class CrdRoutingConfigProviderTests
     }
 
     [Fact]
+    public async Task UnownedResource_NeverPresentedByClient_NeverAppearsInBatch()
+    {
+        // Label-selector ownership filtering (doc 04) happens at the ICrdKubernetesClient
+        // boundary: the real CrdKubernetesClient passes the owner label selector into the K8s
+        // list/watch API calls (verified live against a real cluster), so an unowned CR is never
+        // returned to this provider in the first place. This test documents and locks in that
+        // the provider does no filtering of its own and trusts the client completely - it must
+        // never "discover" a resource the client did not hand it, even implicitly (e.g. by
+        // treating a differently-owned CR sharing a name as related).
+        var client = new FakeCrdKubernetesClient();
+        client.QueueList([MakeResource("notes", "notes", "NOTES")], "1");
+
+        await using var provider = CreateProvider(client);
+        using var cts = new CancellationTokenSource(TestTimeout);
+        var enumerator = provider.WatchAsync(cts.Token).GetAsyncEnumerator(cts.Token);
+        var first = await NextBatchAsync(enumerator);
+        Assert.Single(first.Routing.Applications);
+
+        // Simulate the API server never delivering an unowned CR's events at all (it simply
+        // never shows up on this instance's watch): no further events are emitted, and the
+        // batch must stay exactly as-is.
+        Assert.Null(await FirstBatchOrNullAsync(enumerator, TimeSpan.FromMilliseconds(200)));
+    }
+
+    [Fact]
     public async Task AddedEvent_ProducesNewBatchWithApplicationAdded()
     {
         var client = new FakeCrdKubernetesClient();
