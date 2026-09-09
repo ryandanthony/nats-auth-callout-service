@@ -1,0 +1,49 @@
+# Build context should be only what's needed for `dotnet publish` — the .NET SDK compiles
+# from source, so bin/obj/test artifacts and unrelated tooling never need to enter the
+# Docker build context (faster builds, no risk of stale binaries leaking into the image).
+
+# Build outputs
+**/bin/
+**/obj/
+**/out/
+
+# IDE / editor
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Git
+.git/
+.gitignore
+.github/
+
+# Docs and planning (not needed to build/run the service)
+docs/
+implementation-plan/
+QUESTIONS.md
+*.md
+!README.md
+
+# Test projects and fixtures (not part of the runtime image)
+tests/
+
+# Dev loop / samples (Aspire AppHosts, not part of the container)
+dev/
+
+# Deployment manifests (applied to clusters separately, not baked into the image)
+deploy/
+
+# Schemas (validated in CI/tests, not needed at runtime)
+schemas/
+
+# Local secrets / env files, should never be present but exclude defensively
+.env
+.env.*
+*.pfx
+*.pem
+*.key
+
+# Container tooling itself
+Dockerfile
+.dockerignore
