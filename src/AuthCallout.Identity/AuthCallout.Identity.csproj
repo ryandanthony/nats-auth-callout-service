@@ -9,6 +9,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AuthCallout.Contracts\AuthCallout.Contracts.csproj" />
+    <!-- Reuses P04's ClaimsAccessor (nested-path traversal + pinned coercion rules) as the
+         IClaimsAccessor implementation for ITokenValidator's output, rather than duplicating
+         that logic here. Coordinator-approved (DM, P06 packet). Core has no transport/storage
+         dependencies of its own, so this does not pull anything unwanted into Identity. -->
+    <ProjectReference Include="..\AuthCallout.Core\AuthCallout.Core.csproj" />
   </ItemGroup>
 
 </Project>
