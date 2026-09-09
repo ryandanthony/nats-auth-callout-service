@@ -52,7 +52,7 @@ Common provider contract (conceptual): *load the current set, aggregate into the
 
 - **Files (JSON/YAML):** a directory of per-application files. Adding or removing a file adds or removes an application. Watched for change.
 - **Kubernetes:** a k8s-native CRD, one Custom Resource per application, watched **cluster-wide**. Each instance claims the Custom Resources it owns by a matching label/selector, so CRs may live in any namespace and multiple instances can share a cluster. The k8s integration is isolated so its client dependency stays out of the core.
-- **Database (future):** rows map into the same application aggregate; no core change needed to add it.
+- **Database (PostgreSQL + Dapper, P12):** one row per application in `auth_applications` (name, JSONB `spec` reusing the exact file schema v1 shape, `enabled`), polled on `pollInterval` (the ADR 0017 staleness heartbeat) with LISTEN/NOTIFY as a latency-only optimization. Migrations are plain ordered `.sql` scripts in `db/migrations/`.
 
 All sources share one aggregation model: config is a **set of discrete application units** plus the bootstrap global settings.
 
