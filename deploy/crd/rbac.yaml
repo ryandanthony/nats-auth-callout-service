@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nats-auth-callout
+  labels:
+    app.kubernetes.io/name: nats-auth-callout-service
+---
+# Cluster-wide read + status-write on AuthApplication Custom Resources. The callout claims the
+# subset it owns via a label selector at request time (doc 04 §Kubernetes, ADR 0005); RBAC
+# itself grants list/watch/get/patch-status across the whole CRD (K8s RBAC has no built-in
+# label-scoped authorization, so ownership filtering happens in the watch request, not here).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nats-auth-callout-crd-reader
+  labels:
+    app.kubernetes.io/name: nats-auth-callout-service
+rules:
+  - apiGroups: ["authcallout.ants.zone"]
+    resources: ["authapplications"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["authcallout.ants.zone"]
+    resources: ["authapplications/status"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nats-auth-callout-crd-reader
+  labels:
+    app.kubernetes.io/name: nats-auth-callout-service
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nats-auth-callout-crd-reader
+subjects:
+  - kind: ServiceAccount
+    name: nats-auth-callout
+    namespace: default

@@ -1,0 +1,38 @@
+apiVersion: authcallout.ants.zone/v1
+kind: AuthApplication
+metadata:
+  name: tasks
+  namespace: tasks
+  labels:
+    authcallout.ants.zone/owner: prod
+spec:
+  targetAccount: TASKS
+  issuer:
+    authority: https://id.ants.zone/realms/main
+    jwksCache: 5m
+    validateAudience: true
+    audience: [nats]
+    clockSkew: 60s
+    allowedAlgorithms: [RS256, ES256]
+  match:
+    azp: [tasks-web]
+  identityPropagation:
+    enabled: true
+  events:
+    success: tasks.events.auth.success
+    failure: tasks.events.auth.failure
+  profiles:
+    - name: worker
+      match: { realm_access.roles: [tasks-worker] }
+      grant:
+        publish: ["tasks.{tenant}.>"]
+        subscribe: ["tasks.{tenant}.>"]
+      nameClaim: sub
+      autoAddSessionAccess: true
+      variables:
+        - name: tenant
+          claim: tenant_id
+          required: true
+          transforms: [lowercase, sanitize]
+      publishTemplates: ["tasks.{tenant}.outbox.>"]
+      subscribeTemplates: ["tasks.{tenant}.inbox.>"]
