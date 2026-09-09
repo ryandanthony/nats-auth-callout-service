@@ -13,7 +13,7 @@ namespace AuthCallout.Identity.Jwks;
 
 /// <summary>
 /// Keeps every configured issuer's JWKS warm (doc 08 §JWKS cache manager): one
-/// <see cref="ConfigurationManager{T}"/> per distinct issuer authority (de-duplicated across
+/// <see cref="IssuerJwksState"/> per distinct issuer authority (de-duplicated across
 /// applications), prewarmed before <c>Serving</c>, proactively refreshed on an interval, and
 /// refreshed single-flight on demand when <see cref="AuthCallout.Identity.Validation.TokenValidator"/>
 /// encounters an unknown <c>kid</c>. Tracks the issuer set from
@@ -22,10 +22,10 @@ namespace AuthCallout.Identity.Jwks;
 /// </summary>
 public sealed class JwksCacheManager : IJwksCacheManager, IJwksKeyProvider, IDisposable
 {
-    private readonly ConcurrentDictionary<string, IssuerJwksState> _issuers = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, TrackedIssuer> _issuers = new(StringComparer.Ordinal);
     private readonly IActiveConfigSource _activeConfigSource;
     private readonly JwksSettings _settings;
-    private readonly IssuerConfigurationManagerFactory _configurationManagerFactory;
+    private readonly IssuerConfigurationManagerFactory _fetcherFactory;
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="JwksCacheManager"/> class.</summary>
@@ -36,20 +36,20 @@ public sealed class JwksCacheManager : IJwksCacheManager, IJwksKeyProvider, IDis
     {
     }
 
-    /// <summary>Initializes a new instance of the <see cref="JwksCacheManager"/> class with an injectable configuration-manager factory (test seam: substitutes a stub IdP's document retriever).</summary>
+    /// <summary>Initializes a new instance of the <see cref="JwksCacheManager"/> class with an injectable fetcher factory (test seam: substitutes a stub IdP's document retriever).</summary>
     /// <param name="activeConfigSource">The active config source to track the issuer set from.</param>
     /// <param name="settings">Bootstrap JWKS cache manager settings (default refresh interval, fetch timeout).</param>
-    /// <param name="configurationManagerFactory">Builds the per-issuer <see cref="ConfigurationManager{T}"/>.</param>
+    /// <param name="fetcherFactory">Builds the per-issuer <see cref="IssuerFetcher"/>.</param>
     public JwksCacheManager(
-        IActiveConfigSource activeConfigSource, JwksSettings settings, IssuerConfigurationManagerFactory configurationManagerFactory)
+        IActiveConfigSource activeConfigSource, JwksSettings settings, IssuerConfigurationManagerFactory fetcherFactory)
     {
         ArgumentNullException.ThrowIfNull(activeConfigSource);
         ArgumentNullException.ThrowIfNull(settings);
-        ArgumentNullException.ThrowIfNull(configurationManagerFactory);
+        ArgumentNullException.ThrowIfNull(fetcherFactory);
 
         _activeConfigSource = activeConfigSource;
         _settings = settings;
-        _configurationManagerFactory = configurationManagerFactory;
+        _fetcherFactory = fetcherFactory;
         _activeConfigSource.Changed += OnActiveConfigChanged;
 
         if (_activeConfigSource.Current is { } current)
@@ -63,9 +63,14 @@ public sealed class JwksCacheManager : IJwksCacheManager, IJwksKeyProvider, IDis
     {
         SyncIssuers(_activeConfigSource.Current?.Routing ?? RoutingConfig.Empty);
 
-        var states = _issuers.Values.ToArray();
-        var refreshTasks = states.Select(state => state.RefreshAsync(cancellationToken));
+        var tracked = _issuers.Values.ToArray();
+        var refreshTasks = tracked.Select(t => t.State.RefreshAsync(cancellationToken));
         await Task.WhenAll(refreshTasks).ConfigureAwait(false);
+
+        foreach (var t in tracked)
+        {
+            t.EnsureProactiveRefreshStarted();
+        }
     }
 
     /// <inheritdoc />
@@ -73,21 +78,21 @@ public sealed class JwksCacheManager : IJwksCacheManager, IJwksKeyProvider, IDis
     {
         ArgumentNullException.ThrowIfNull(issuerAuthority);
 
-        return _issuers.TryGetValue(issuerAuthority, out var state)
-            ? state.RefreshAsync(cancellationToken)
+        return _issuers.TryGetValue(issuerAuthority, out var tracked)
+            ? tracked.State.RefreshAsync(cancellationToken)
             : Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public IReadOnlyList<JwksIssuerHealth> Health =>
-        [.. _issuers.Values.Select(ToHealth)];
+        [.. _issuers.Values.Select(static t => ToHealth(t.State))];
 
     /// <inheritdoc />
     public IReadOnlyList<SecurityKey> GetSigningKeys(string issuerAuthority)
     {
         ArgumentNullException.ThrowIfNull(issuerAuthority);
 
-        return _issuers.TryGetValue(issuerAuthority, out var state) ? state.GetSigningKeys() : [];
+        return _issuers.TryGetValue(issuerAuthority, out var tracked) ? tracked.State.GetSigningKeys() : [];
     }
 
     /// <inheritdoc />
@@ -99,9 +104,9 @@ public sealed class JwksCacheManager : IJwksCacheManager, IJwksKeyProvider, IDis
         }
 
         _activeConfigSource.Changed -= OnActiveConfigChanged;
-        foreach (var state in _issuers.Values)
+        foreach (var tracked in _issuers.Values)
         {
-            state.Dispose();
+            tracked.Dispose();
         }
 
         _disposed = true;
@@ -113,8 +118,7 @@ public sealed class JwksCacheManager : IJwksCacheManager, IJwksKeyProvider, IDis
     /// Reconciles tracked per-issuer state against the routing aggregate's current issuer set
     /// (doc 08: "add issuer -&gt; prewarm it; last app for an issuer removed -&gt; drop state").
     /// Adding an issuer here does not itself fetch (callers decide when to await that, e.g.
-    /// <see cref="PrewarmAllAsync"/> or a background proactive-refresh loop owned by the host);
-    /// this only ensures the tracked set matches the config.
+    /// <see cref="PrewarmAllAsync"/>); this only ensures the tracked set matches the config.
     /// </summary>
     private void SyncIssuers(RoutingConfig routing)
     {
@@ -128,8 +132,10 @@ public sealed class JwksCacheManager : IJwksCacheManager, IJwksKeyProvider, IDis
             }
 
             var issuer = routing.IssuerIndex[authority][0].Issuer;
-            var configurationManager = _configurationManagerFactory.Create(issuer, _settings);
-            _issuers.TryAdd(authority, new IssuerJwksState(authority, configurationManager));
+            var fetcher = _fetcherFactory.Create(issuer);
+            var state = new IssuerJwksState(authority, fetcher);
+            var refreshInterval = (issuer.RefreshInterval ?? _settings.RefreshInterval).Value;
+            _issuers.TryAdd(authority, new TrackedIssuer(state, refreshInterval));
         }
 
         foreach (var authority in _issuers.Keys)
@@ -148,4 +154,63 @@ public sealed class JwksCacheManager : IJwksCacheManager, IJwksKeyProvider, IDis
 
     private static JwksIssuerHealth ToHealth(IssuerJwksState state) =>
         new(state.Authority, IsHealthy: state.LastRefreshSucceeded, HasUsableKeys: state.HasEverSucceeded, state.LastRefreshed);
+
+    /// <summary>
+    /// Pairs an <see cref="IssuerJwksState"/> with its own proactive-refresh loop (doc 08:
+    /// "re-fetches each issuer's JWKS on a configurable interval so keys are renewed ahead of
+    /// expiry"). The loop is started once prewarm has completed for this issuer (no point
+    /// scheduling a proactive refresh before the first fetch has even happened) and stops when
+    /// this instance is disposed (issuer removed from config, or the whole manager shutting
+    /// down).
+    /// </summary>
+    private sealed class TrackedIssuer : IDisposable
+    {
+        private readonly PeriodicTimer _timer;
+        private readonly CancellationTokenSource _cts = new();
+        private Task? _loopTask;
+        private readonly Lock _startLock = new();
+
+        public TrackedIssuer(IssuerJwksState state, TimeSpan refreshInterval)
+        {
+            State = state;
+            _timer = new PeriodicTimer(refreshInterval);
+        }
+
+        public IssuerJwksState State { get; }
+
+        public void EnsureProactiveRefreshStarted()
+        {
+            if (_loopTask is not null)
+            {
+                return;
+            }
+
+            lock (_startLock)
+            {
+                _loopTask ??= Task.Run(RunLoopAsync);
+            }
+        }
+
+        public void Dispose()
+        {
+            _cts.Cancel();
+            _timer.Dispose();
+            _cts.Dispose();
+        }
+
+        private async Task RunLoopAsync()
+        {
+            try
+            {
+                while (await _timer.WaitForNextTickAsync(_cts.Token).ConfigureAwait(false))
+                {
+                    await State.RefreshAsync(_cts.Token).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected on Dispose/shutdown.
+            }
+        }
+    }
 }
