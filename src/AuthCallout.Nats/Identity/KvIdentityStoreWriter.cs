@@ -40,11 +40,13 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
     /// <param name="assertionSigner">Signs each connection's identity assertion with the bootstrap keyset's active key.</param>
     /// <param name="secretResolver">Resolves each bootstrap assertion key's seed so its public half can be published (ADR 0011: "only the public key is ever published").</param>
     /// <param name="timeProvider">The time source for TTL computation (D17: <c>exp - now</c>). Defaults to <see cref="TimeProvider.System"/>.</param>
+    /// <param name="onOrphanedBucket">Invoked with an orphaned per-application bucket's name during provisioning (D16). Optional; see <see cref="Identity.BucketProvisioner"/>.</param>
     public KvIdentityStoreWriter(
         INatsKVContext kvContext,
         IAssertionSigner assertionSigner,
         ISecretResolver secretResolver,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        Action<string>? onOrphanedBucket = null)
     {
         ArgumentNullException.ThrowIfNull(kvContext);
         ArgumentNullException.ThrowIfNull(assertionSigner);
@@ -54,7 +56,7 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
         _assertionSigner = assertionSigner;
         _secretResolver = secretResolver;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _bucketProvisioner = new BucketProvisioner(kvContext);
+        _bucketProvisioner = new BucketProvisioner(kvContext, onOrphanedBucket);
         _keysPublisher = new KeysPublisher(kvContext);
         _discoveryPublisher = new DiscoveryPublisher(kvContext);
     }

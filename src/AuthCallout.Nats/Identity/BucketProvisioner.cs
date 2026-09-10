@@ -31,13 +31,20 @@ public sealed class BucketProvisioner
     private static readonly TimeSpan MarkerRetention = TimeSpan.FromMinutes(1);
 
     private readonly INatsKVContext _kvContext;
+    private readonly Action<string>? _onOrphanedBucket;
 
     /// <summary>Initializes a new instance of the <see cref="BucketProvisioner"/> class.</summary>
     /// <param name="kvContext">The KV context to create/update buckets against (the callout's own connection).</param>
-    public BucketProvisioner(INatsKVContext kvContext)
+    /// <param name="onOrphanedBucket">
+    /// Invoked with an orphaned per-application bucket's name after it is metered (D16:
+    /// "log + warning metric" — this callback is the "log" half). Optional; when null, only
+    /// the metric is recorded. Callers (P13) may wire this to their logger.
+    /// </param>
+    public BucketProvisioner(INatsKVContext kvContext, Action<string>? onOrphanedBucket = null)
     {
         ArgumentNullException.ThrowIfNull(kvContext);
         _kvContext = kvContext;
+        _onOrphanedBucket = onOrphanedBucket;
     }
 
     /// <summary>
@@ -46,20 +53,25 @@ public sealed class BucketProvisioner
     /// published), and — for propagation-enabled applications only — their OIDC-token and
     /// assertion buckets (ADR 0010/0011) all exist, with per-message TTL enabled and no
     /// bucket-wide <c>MaxAge</c> (D17). Uses create-or-update semantics, so it is safe to
-    /// call on every config apply, not just the first.
+    /// call on every config apply, not just the first. Also scans existing
+    /// <c>callout_apps_*</c> buckets for any that no longer belong to a currently-configured
+    /// application (an application removed from config) and reports each as orphaned (D16:
+    /// "leave orphaned, log + warning metric") — it never deletes them.
     /// </summary>
     /// <param name="routing">The routing aggregate to provision buckets for.</param>
     /// <param name="cancellationToken">Cancellation for the provisioning attempt.</param>
-    /// <returns>A task that completes when every bucket has been created or updated.</returns>
+    /// <returns>A task that completes when every bucket has been created or updated and the orphan scan has finished.</returns>
     public async Task ProvisionAsync(RoutingConfig routing, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(routing);
 
         await CreateOrUpdateAsync(AppSlug.AssertionKeysBucket, cancellationToken).ConfigureAwait(false);
 
+        var configuredSlugs = new HashSet<string>(StringComparer.Ordinal);
         foreach (var application in routing.Applications)
         {
             var slug = application.Slug;
+            configuredSlugs.Add(slug.Value);
             await CreateOrUpdateAsync(slug.DiscoveryBucket, cancellationToken).ConfigureAwait(false);
 
             if (!application.EffectiveIdentityPropagation.Enabled)
@@ -69,6 +81,22 @@ public sealed class BucketProvisioner
 
             await CreateOrUpdateAsync(slug.OidcTokensBucket, cancellationToken).ConfigureAwait(false);
             await CreateOrUpdateAsync(slug.AssertionsBucket, cancellationToken).ConfigureAwait(false);
+        }
+
+        await ReportOrphanedBucketsAsync(configuredSlugs, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ReportOrphanedBucketsAsync(HashSet<string> configuredSlugs, CancellationToken cancellationToken)
+    {
+        await foreach (var bucket in _kvContext.GetBucketNamesAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (PerAppBucketSlug.TryExtract(bucket) is not { } slug || configuredSlugs.Contains(slug))
+            {
+                continue;
+            }
+
+            BucketProvisionerMetrics.OrphanedBuckets.Add(1);
+            _onOrphanedBucket?.Invoke(bucket);
         }
     }
 
