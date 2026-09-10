@@ -1,0 +1,127 @@
+name: release
+
+# Tag-based releases: push a tag like v1.2.3 to cut a release (doc 08 §Container & supply
+# chain, matching the mcp-private-library/playmetrics-mcp convention: tag-based CI, no
+# auto-deploy). ci.yml (P01) gates every push/PR to main; this workflow only runs on tags.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write     # create the GitHub Release
+  packages: write     # push the image to GHCR
+  id-token: write     # cosign keyless signing (OIDC) - required, not optional
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # GitVersion needs full history and tags
+
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v3.1.11
+        with:
+          versionSpec: '6.x'
+
+      - name: Determine version
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@v3.1.11
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.gitversion.outputs.majorMinorPatch }}
+            type=raw,value=${{ steps.gitversion.outputs.major }}.${{ steps.gitversion.outputs.minor }}
+            type=raw,value=${{ steps.gitversion.outputs.semVer }}
+            type=sha
+            type=raw,value=latest
+
+      # Multi-arch (linux/amd64 + linux/arm64, doc 08), SBOM + SLSA provenance attestations
+      # baked into the manifest by buildx itself (--sbom/--provenance), and the digest
+      # captured for cosign signing below (a mutable tag must never be what gets signed).
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.gitversion.outputs.majorMinorPatch }}
+            INFORMATIONAL_VERSION=${{ steps.gitversion.outputs.informationalVersion }}
+          secrets: |
+            nuget_github_token=${{ secrets.GITHUB_TOKEN }}
+          sbom: true
+          provenance: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      # Keyless (OIDC) signing via the GitHub Actions workflow identity - no long-lived
+      # signing keys. Signs the immutable DIGEST, never a mutable tag (doc 08 §Signing &
+      # provenance: "so latest/version tags can move without invalidating the signature").
+      - name: Sign image digest
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+          cosign sign --yes "$IMAGE"
+
+      # The SBOM/provenance attestations were already attached to the manifest by buildx
+      # (sbom/provenance: true above); cosign additionally verifies + re-attests them under
+      # the same keyless identity so `cosign verify-attestation` (documented in README below)
+      # has something to check without needing to trust the registry's own attestation store.
+      - name: Verify signature (fail the release if signing didn't take)
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+          cosign verify "$IMAGE" \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: v${{ steps.gitversion.outputs.majorMinorPatch }}
+          generate_release_notes: true
+          body: |
+            Docker image:
+
+            ```
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.gitversion.outputs.majorMinorPatch }}
+            ```
+
+            Digest: `${{ steps.build.outputs.digest }}`
+
+            Signed with cosign (keyless/OIDC). Verify:
+
+            ```
+            cosign verify ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }} \
+              --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+            ```
