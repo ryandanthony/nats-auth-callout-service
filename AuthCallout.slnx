@@ -14,6 +14,7 @@
     <Project Path="tests/AuthCallout.Config.Tests/AuthCallout.Config.Tests.csproj" />
     <Project Path="tests/AuthCallout.Contracts.Tests/AuthCallout.Contracts.Tests.csproj" />
     <Project Path="tests/AuthCallout.Core.Tests/AuthCallout.Core.Tests.csproj" />
+    <Project Path="tests/AuthCallout.Host.Tests/AuthCallout.Host.Tests.csproj" />
     <Project Path="tests/AuthCallout.Identity.Tests/AuthCallout.Identity.Tests.csproj" />
     <Project Path="tests/AuthCallout.Integration/AuthCallout.Integration.csproj" />
     <Project Path="tests/AuthCallout.Nats.Tests/AuthCallout.Nats.Tests.csproj" />

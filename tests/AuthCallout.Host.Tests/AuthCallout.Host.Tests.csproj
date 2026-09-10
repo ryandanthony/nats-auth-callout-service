@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="NSubstitute" />
+    <!-- Host-level tests drive the health endpoints (/healthz /readyz /startupz)
+         through the real host per the P13 testing bar. -->
+    <PackageReference Include="Alba" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AuthCallout.Host\AuthCallout.Host.csproj" />
+    <ProjectReference Include="..\..\src\AuthCallout.Contracts\AuthCallout.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>
