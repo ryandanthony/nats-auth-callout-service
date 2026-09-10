@@ -75,6 +75,7 @@ public sealed class NatsConnectionManager : IAsyncDisposable
     /// Awaits the in-flight responder loop so its own drain (bounded
     /// <c>Parallel.ForEachAsync</c> awaits, doc 05) completes before returning.
     /// </summary>
+    /// <returns>A task that completes once the responder loop has drained and the connection is closed.</returns>
     public async ValueTask DisposeAsync()
     {
         _connection.ConnectionOpened -= OnConnectionOpenedAsync;

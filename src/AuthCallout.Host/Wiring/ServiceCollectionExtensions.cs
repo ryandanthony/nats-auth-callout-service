@@ -75,6 +75,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IHostedService>(sp => new AuthCalloutHostedService(new AuthCalloutHostedServiceDependencies(
             stateMachine,
             configApplyLoop,
+            activeConfigSource,
             components.JwksCacheManager,
             bootstrap.Jwks.PrewarmRequired,
             components.ConnectionManager,

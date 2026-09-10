@@ -93,45 +93,45 @@ public static class HealthReportJsonWriter
         switch (value)
         {
             case string[] stringArray:
-            {
-                writer.WriteStartArray(key);
-                foreach (var item in stringArray)
                 {
-                    writer.WriteStringValue(item);
-                }
+                    writer.WriteStartArray(key);
+                    foreach (var item in stringArray)
+                    {
+                        writer.WriteStringValue(item);
+                    }
 
-                writer.WriteEndArray();
-                break;
-            }
+                    writer.WriteEndArray();
+                    break;
+                }
 
             case bool boolValue:
-            {
-                writer.WriteBoolean(key, boolValue);
-                break;
-            }
+                {
+                    writer.WriteBoolean(key, boolValue);
+                    break;
+                }
 
             case double doubleValue:
-            {
-                if (double.IsFinite(doubleValue))
                 {
-                    writer.WriteNumber(key, doubleValue);
-                }
-                else
-                {
-                    writer.WriteString(key, doubleValue.ToString(System.Globalization.CultureInfo.InvariantCulture));
-                }
+                    if (double.IsFinite(doubleValue))
+                    {
+                        writer.WriteNumber(key, doubleValue);
+                    }
+                    else
+                    {
+                        writer.WriteString(key, doubleValue.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    }
 
-                break;
-            }
+                    break;
+                }
 
             default:
-            {
-                // Every other value (numbers, timestamps, enums) is stringified: the writer
-                // is deliberately conservative here rather than reflecting arbitrary object
-                // graphs, so a health check can never accidentally leak nested secret state.
-                writer.WriteString(key, value.ToString());
-                break;
-            }
+                {
+                    // Every other value (numbers, timestamps, enums) is stringified: the writer
+                    // is deliberately conservative here rather than reflecting arbitrary object
+                    // graphs, so a health check can never accidentally leak nested secret state.
+                    writer.WriteString(key, value.ToString());
+                    break;
+                }
         }
     }
 }
