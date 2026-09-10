@@ -48,20 +48,10 @@ public sealed class TokenValidator : ITokenValidator
         ArgumentNullException.ThrowIfNull(rawToken);
         ArgumentNullException.ThrowIfNull(issuer);
 
-        if (!Handler.CanReadToken(rawToken))
+        var preflightFailure = Preflight(rawToken, issuer);
+        if (preflightFailure is { } reason)
         {
-            return TokenValidationOutcome.Invalid(DenyReason.SignatureInvalid);
-        }
-
-        // Peek the (unvalidated) header alg first: Microsoft.IdentityModel surfaces a
-        // disallowed algorithm as the same generic SecurityTokenInvalidSignatureException as
-        // an unknown kid (IDX10511 wraps the real IDX10696 cause), so checking here is what
-        // lets AlgorithmRejected be reported precisely instead of collapsing into
-        // SignatureInvalid (ADR 0016's alg-confusion test expects the specific reason).
-        var header = Handler.ReadJwtToken(rawToken).Header;
-        if (!IsAlgorithmAllowed(header.Alg, issuer.AllowedAlgorithms))
-        {
-            return TokenValidationOutcome.Invalid(DenyReason.AlgorithmRejected);
+            return TokenValidationOutcome.Invalid(reason);
         }
 
         var signingKeys = _keyProvider.GetSigningKeys(issuer.Authority);
@@ -94,6 +84,40 @@ public sealed class TokenValidator : ITokenValidator
         }
 
         return ToOutcome(result);
+    }
+
+    /// <summary>
+    /// Cheap, pre-signature-verification checks on the raw token, so a disallowed algorithm
+    /// or malformed shape reports its precise <see cref="DenyReason"/> before falling through
+    /// to <c>Handler.ValidateTokenAsync</c>'s generic failure mapping.
+    /// </summary>
+    private static DenyReason? Preflight(string rawToken, IssuerConfig issuer)
+    {
+        if (!Handler.CanReadToken(rawToken))
+        {
+            return DenyReason.SignatureInvalid;
+        }
+
+        // Peek the (unvalidated) header alg first: Microsoft.IdentityModel surfaces a
+        // disallowed algorithm as the same generic SecurityTokenInvalidSignatureException as
+        // an unknown kid (IDX10511 wraps the real IDX10696 cause), so checking here is what
+        // lets AlgorithmRejected be reported precisely instead of collapsing into
+        // SignatureInvalid (ADR 0016's alg-confusion test expects the specific reason).
+        // CanReadToken only checks segment count/shape, not that each segment is valid
+        // Base64Url JSON, so ReadJwtToken can still throw on a token CanReadToken accepted
+        // (e.g. malformed but JWT-shaped input) — caught here so "never throws" holds for
+        // every malformed input, not just the ones CanReadToken already rejects.
+        string? headerAlgorithm;
+        try
+        {
+            headerAlgorithm = Handler.ReadJwtToken(rawToken).Header.Alg;
+        }
+        catch (Exception ex) when (ex is ArgumentException or FormatException)
+        {
+            return DenyReason.SignatureInvalid;
+        }
+
+        return IsAlgorithmAllowed(headerAlgorithm, issuer.AllowedAlgorithms) ? null : DenyReason.AlgorithmRejected;
     }
 
     private static bool IsAlgorithmAllowed(string? headerAlgorithm, IReadOnlyList<string> allowedAlgorithms) =>
