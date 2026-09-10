@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -10,6 +11,16 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="NSubstitute" />
+    <!-- Test-only: validates emitted event JSON against schemas/events/auth-outcome/v1.json
+         (P09 testing bar). Same package/version P02 already uses in Contracts.Tests;
+         never referenced by AuthCallout.Nats itself. -->
+    <PackageReference Include="JsonSchema.Net" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Hand-authored schemas copied alongside test binaries so schema-validation tests
+         can load them without repo-root path assumptions (same pattern as Contracts.Tests). -->
+    <None Include="..\..\schemas\**\*.json" LinkBase="schemas" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
