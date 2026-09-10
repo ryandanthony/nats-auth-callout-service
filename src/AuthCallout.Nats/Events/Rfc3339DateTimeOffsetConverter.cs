@@ -17,7 +17,7 @@ namespace AuthCallout.Nats.Events;
 /// <c>Z</c> form, so this converter keeps emitted payloads byte-identical to the documented
 /// shape rather than merely schema-format-valid.
 /// </summary>
-internal sealed class Rfc3339DateTimeOffsetConverter : JsonConverter<DateTimeOffset>
+public sealed class Rfc3339DateTimeOffsetConverter : JsonConverter<DateTimeOffset>
 {
     /// <summary>
     /// The exact doc-09 timestamp format: second precision, <c>Z</c>-suffixed UTC (e.g.
@@ -33,6 +33,7 @@ internal sealed class Rfc3339DateTimeOffsetConverter : JsonConverter<DateTimeOff
     /// <inheritdoc />
     public override void Write(Utf8JsonWriter writer, DateTimeOffset value, JsonSerializerOptions options)
     {
+        ArgumentNullException.ThrowIfNull(writer);
 #pragma warning disable S6585 // The built-in "u" standard specifier is close but uses a space instead of 'T' (e.g. "2026-09-06 22:00:00Z"); doc 09's exact example ("2026-09-06T22:00:00Z") requires the custom pattern.
         writer.WriteStringValue(value.UtcDateTime.ToString(Rfc3339SecondsFormat, System.Globalization.CultureInfo.InvariantCulture));
 #pragma warning restore S6585
