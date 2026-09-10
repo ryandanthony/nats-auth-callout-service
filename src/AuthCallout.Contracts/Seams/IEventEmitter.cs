@@ -25,7 +25,13 @@ public interface IEventEmitter
     /// response").
     /// </summary>
     /// <param name="decision">The resolution outcome to emit an event for.</param>
+    /// <param name="userNKey">
+    /// The connecting user's NKey from the originating <see cref="AuthRequest"/> (ADR 0008,
+    /// doc 09 optional <c>userNKey</c> payload field). The caller (P07 responder / Host)
+    /// supplies it because <see cref="Decision"/> is transport-agnostic and does not carry
+    /// it; <see langword="null"/> when unavailable, in which case the field is omitted.
+    /// </param>
     /// <param name="cancellationToken">Cancellation for the publish attempt.</param>
     /// <returns>A task that completes when the emit attempt (success or swallowed failure) is done.</returns>
-    Task EmitAsync(Decision decision, CancellationToken cancellationToken);
+    Task EmitAsync(Decision decision, string? userNKey, CancellationToken cancellationToken);
 }
