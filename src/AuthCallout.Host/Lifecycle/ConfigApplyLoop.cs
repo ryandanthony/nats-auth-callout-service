@@ -42,36 +42,29 @@ public sealed class ConfigApplyLoop
     /// <param name="bootstrap">The bootstrap layer, paired unchanged into every <see cref="ActiveConfig"/> snapshot (doc 04: never hot-reloaded).</param>
     /// <param name="activeConfigSource">The swap target for every accepted batch.</param>
     /// <param name="stateMachine">The state machine to report config-availability and freshness into.</param>
-    /// <param name="warnStaleness">ADR 0017 warn-staleness threshold.</param>
-    /// <param name="maxStaleness">ADR 0017 max-staleness threshold.</param>
-    /// <param name="onApplied">Invoked after every accepted apply (P08 bucket provisioning + discovery/keys publication, doc 08 task 3). Optional.</param>
-    /// <param name="onRejected">Invoked with a deterministic reason string on every rejected batch (log + metric, ADR 0006). Optional.</param>
-    /// <param name="timeProvider">Time source for the staleness clock. Defaults to <see cref="TimeProvider.System"/>.</param>
+    /// <param name="options">Staleness thresholds and optional apply/reject callbacks.</param>
     public ConfigApplyLoop(
         IRoutingConfigProvider provider,
         BootstrapConfig bootstrap,
         ActiveConfigSource activeConfigSource,
         ServiceStateMachine stateMachine,
-        TimeSpan warnStaleness,
-        TimeSpan maxStaleness,
-        Func<ActiveConfig, CancellationToken, Task>? onApplied = null,
-        Action<string>? onRejected = null,
-        TimeProvider? timeProvider = null)
+        ConfigApplyLoopOptions options)
     {
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(bootstrap);
         ArgumentNullException.ThrowIfNull(activeConfigSource);
         ArgumentNullException.ThrowIfNull(stateMachine);
+        ArgumentNullException.ThrowIfNull(options);
 
         _provider = provider;
         _bootstrap = bootstrap;
         _activeConfigSource = activeConfigSource;
         _stateMachine = stateMachine;
-        _warnStaleness = warnStaleness;
-        _maxStaleness = maxStaleness;
-        _onApplied = onApplied;
-        _onRejected = onRejected;
-        _timeProvider = timeProvider ?? TimeProvider.System;
+        _warnStaleness = options.WarnStaleness;
+        _maxStaleness = options.MaxStaleness;
+        _onApplied = options.OnApplied;
+        _onRejected = options.OnRejected;
+        _timeProvider = options.TimeProvider ?? TimeProvider.System;
     }
 
     /// <summary>Gets the deterministic rejection reason from the most recently rejected batch, or null if none (diagnostics/tests).</summary>
@@ -178,11 +171,17 @@ public sealed class ConfigApplyLoop
         }
 
         var age = _timeProvider.GetUtcNow() - lastSync.Value;
-        var freshness = age >= _maxStaleness
-            ? ConfigFreshness.StaleUnready
-            : age >= _warnStaleness
-                ? ConfigFreshness.StaleDegraded
-                : ConfigFreshness.Fresh;
+        var freshness = ComputeFreshness(age);
         _stateMachine.SetFreshness(freshness);
+    }
+
+    private ConfigFreshness ComputeFreshness(TimeSpan age)
+    {
+        if (age >= _maxStaleness)
+        {
+            return ConfigFreshness.StaleUnready;
+        }
+
+        return age >= _warnStaleness ? ConfigFreshness.StaleDegraded : ConfigFreshness.Fresh;
     }
 }

@@ -25,7 +25,9 @@ namespace AuthCallout.Host.Wiring;
 /// top-level statements stay within the repo's class-coupling analyzer limit. Every
 /// collaborator here is built against its frozen Contracts interface, per the swarm ground
 /// rules — the one exception is <see cref="Wiring.PendingIdentityStoreWriter"/>, a documented
-/// P08 stand-in.
+/// P08 stand-in (see that type's own doc comment for the swap-out plan). Split across a few
+/// private helper methods (rather than one long method) purely to keep each method's own
+/// class-coupling count under the repo's analyzer limit.
 /// </summary>
 public static class ComponentGraph
 {
@@ -35,6 +37,14 @@ public static class ComponentGraph
     /// <param name="activeConfigSource">The active-config source every config-reading component subscribes to.</param>
     /// <param name="stateMachine">The service state machine the connection manager reports into.</param>
     /// <returns>The fully-wired component graph.</returns>
+    // CA2000 (dispose before scope loss) does not apply to any disposable constructed in this
+    // method or its private helpers below (JwksCacheManager, UserJwtMinter, CalloutCrypto,
+    // NatsConnection, NatsConnectionManager, HostMetrics): every one is handed to the caller
+    // via the returned ComponentGraphResult, whose fields the DI container and
+    // AuthCalloutHostedService own for the process lifetime and dispose on shutdown — the
+    // same "hand off a live disposable" pattern AuthCallout.Secrets.SecretResolver documents
+    // at its own CA2000 suppression.
+#pragma warning disable CA2000
     public static ComponentGraphResult Build(
         BootstrapConfig bootstrap, ResolvedBootstrapSecrets secrets, ActiveConfigSource activeConfigSource, ServiceStateMachine stateMachine)
     {
@@ -43,32 +53,50 @@ public static class ComponentGraph
         ArgumentNullException.ThrowIfNull(activeConfigSource);
         ArgumentNullException.ThrowIfNull(stateMachine);
 
-        var identityStoreWriter = new PendingIdentityStoreWriter(); // TODO_P08: swap for the real KV-backed writer once it lands.
+        var identityStoreWriter = new PendingIdentityStoreWriter();
+        var pipelineParts = BuildPipeline(bootstrap, secrets, activeConfigSource);
+        var natsParts = BuildNatsSide(bootstrap, secrets, activeConfigSource, stateMachine, pipelineParts, identityStoreWriter);
 
+        return new ComponentGraphResult(
+            identityStoreWriter, pipelineParts.JwksCacheManager, natsParts.Connection, natsParts.ConnectionManager, new HostMetrics(stateMachine));
+    }
+
+    private static PipelineParts BuildPipeline(BootstrapConfig bootstrap, ResolvedBootstrapSecrets secrets, ActiveConfigSource activeConfigSource)
+    {
         var jwksCacheManager = new JwksCacheManager(activeConfigSource, bootstrap.Jwks);
         var tokenValidator = new TokenValidator(jwksCacheManager, jwksCacheManager);
         var resolutionPipeline = new ResolutionPipeline(tokenValidator);
         var minter = new UserJwtMinter(secrets.IssuerSeed);
         ICalloutCrypto calloutCrypto = secrets.XkeySeed is not null ? new CalloutCrypto(secrets.XkeySeed) : new NoOpCalloutCrypto();
+        return new PipelineParts(jwksCacheManager, resolutionPipeline, minter, calloutCrypto);
+    }
 
+    private static NatsParts BuildNatsSide(
+        BootstrapConfig bootstrap,
+        ResolvedBootstrapSecrets secrets,
+        ActiveConfigSource activeConfigSource,
+        ServiceStateMachine stateMachine,
+        PipelineParts pipelineParts,
+        IIdentityStoreWriter identityStoreWriter)
+    {
         var natsConnection = new NatsConnection(BuildNatsOpts(bootstrap.NatsUrl, secrets.ServiceUserSeed));
 
         var eventEmitter = new EventEmitter(
             natsConnection,
             activeConfigSource,
-            onPublishFailure: (ex, subject) => Console.Error.WriteLine($"WARN: event publish to '{subject}' failed: {ex.GetType().Name}"));
+            onPublishFailure: static (ex, subject) => Console.Error.WriteLine($"WARN: event publish to '{subject}' failed: {ex.GetType().Name}"));
 
         var responderDependencies = new CalloutResponderDependencies(
-            resolutionPipeline, activeConfigSource, minter, calloutCrypto, identityStoreWriter, eventEmitter);
+            pipelineParts.ResolutionPipeline, activeConfigSource, pipelineParts.Minter, pipelineParts.CalloutCrypto, identityStoreWriter, eventEmitter);
         var responderOptions = new CalloutResponderOptions(bootstrap.Concurrency.MaxDegreeOfParallelism, bootstrap.Concurrency.PerRequestTimeout.Value);
         var responder = new CalloutResponder(responderDependencies, responderOptions, onDiagnostic: static msg => Console.Error.WriteLine($"DIAG: {msg}"));
 
         var connectionManager = new NatsConnectionManager(
             natsConnection, responder, stateMachine, onDiagnostic: static msg => Console.Error.WriteLine($"INFO: {msg}"));
 
-        return new ComponentGraphResult(
-            identityStoreWriter, jwksCacheManager, natsConnection, connectionManager, new HostMetrics(stateMachine));
+        return new NatsParts(natsConnection, connectionManager);
     }
+#pragma warning restore CA2000
 
     private static NatsOpts BuildNatsOpts(string natsUrl, string? serviceUserSeed) => new()
     {
@@ -77,4 +105,8 @@ public static class ComponentGraph
         RetryOnInitialConnect = true, // ADR 0017 §1: always attempt recovery, including the first connect.
         AuthOpts = serviceUserSeed is not null ? new NatsAuthOpts { Seed = serviceUserSeed } : NatsAuthOpts.Default,
     };
+
+    private sealed record PipelineParts(JwksCacheManager JwksCacheManager, IResolutionPipeline ResolutionPipeline, IUserJwtMinter Minter, ICalloutCrypto CalloutCrypto);
+
+    private sealed record NatsParts(NatsConnection Connection, NatsConnectionManager ConnectionManager);
 }

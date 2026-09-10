@@ -44,7 +44,7 @@ public sealed class ConfigSourceHealthCheck : IHealthCheck
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         var lastSync = _routingProvider.LastSuccessfulSync;
-        var data = new Dictionary<string, object>
+        var data = new Dictionary<string, object>(StringComparer.Ordinal)
         {
             ["lastSuccessfulSync"] = lastSync?.ToString("O", System.Globalization.CultureInfo.InvariantCulture) ?? "never",
             ["stalenessSeconds"] = lastSync is { } sync ? (_timeProvider.GetUtcNow() - sync).TotalSeconds : double.PositiveInfinity,

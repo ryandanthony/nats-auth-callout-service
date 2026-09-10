@@ -38,7 +38,7 @@ public static class HealthReportJsonWriter
 
         context.Response.ContentType = "application/json; charset=utf-8";
 
-        using var stream = new MemoryStream();
+        await using var stream = new MemoryStream();
         await using (var writer = new Utf8JsonWriter(stream, WriterOptions))
         {
             writer.WriteStartObject();
@@ -93,6 +93,7 @@ public static class HealthReportJsonWriter
         switch (value)
         {
             case string[] stringArray:
+            {
                 writer.WriteStartArray(key);
                 foreach (var item in stringArray)
                 {
@@ -101,10 +102,16 @@ public static class HealthReportJsonWriter
 
                 writer.WriteEndArray();
                 break;
+            }
+
             case bool boolValue:
+            {
                 writer.WriteBoolean(key, boolValue);
                 break;
+            }
+
             case double doubleValue:
+            {
                 if (double.IsFinite(doubleValue))
                 {
                     writer.WriteNumber(key, doubleValue);
@@ -115,12 +122,16 @@ public static class HealthReportJsonWriter
                 }
 
                 break;
+            }
+
             default:
+            {
                 // Every other value (numbers, timestamps, enums) is stringified: the writer
                 // is deliberately conservative here rather than reflecting arbitrary object
                 // graphs, so a health check can never accidentally leak nested secret state.
                 writer.WriteString(key, value.ToString());
                 break;
+            }
         }
     }
 }

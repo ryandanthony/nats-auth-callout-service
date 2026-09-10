@@ -74,7 +74,9 @@ public sealed class AuthCalloutHostedService : IHostedService, IDisposable
 
         try
         {
+#pragma warning disable VSTHRD003 // _configApplyTask was already started by this instance in StartAsync; awaiting it here is the intended join point, not a foreign/unstarted task.
             await _configApplyTask.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
         }
         catch (OperationCanceledException)
         {
@@ -98,10 +100,6 @@ public sealed class AuthCalloutHostedService : IHostedService, IDisposable
 
     private async Task RunConfigApplyLoopAsync(CancellationToken cancellationToken)
     {
-        // Started fresh in this async method's own context (not via a bare Task.Run capturing
-        // an outer scope), so awaiting it later in StopAsync is the intended join point rather
-        // than a foreign/unstarted-task deadlock risk.
-        await Task.Yield();
         try
         {
             await _deps.ConfigApplyLoop.RunAsync(cancellationToken).ConfigureAwait(false);

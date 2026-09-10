@@ -36,7 +36,7 @@ public sealed class NatsConnectionHealthCheck : IHealthCheck
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         var state = _connection.ConnectionState;
-        var data = new Dictionary<string, object> { ["connectionState"] = state.ToString() };
+        var data = new Dictionary<string, object>(StringComparer.Ordinal) { ["connectionState"] = state.ToString() };
 
         var result = state == NatsConnectionState.Open
             ? HealthCheckResult.Healthy("NATS connection open.", data)

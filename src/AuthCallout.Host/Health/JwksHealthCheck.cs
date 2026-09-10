@@ -38,7 +38,7 @@ public sealed class JwksHealthCheck : IHealthCheck
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         var issuers = _jwksCacheManager.Health;
-        var data = new Dictionary<string, object>
+        var data = new Dictionary<string, object>(StringComparer.Ordinal)
         {
             ["issuers"] = issuers.Select(static i => $"{i.Authority}: healthy={i.IsHealthy}, hasUsableKeys={i.HasUsableKeys}").ToArray(),
         };

@@ -88,13 +88,21 @@ public static class BootstrapFileMapper
         var concurrency = MapConcurrency(root, errors);
         var anonymous = MapAnonymous(root, errors);
 
-        if (errors.Count > 0 || natsUrl is null || issuerSeed is null || source is null || jwks is null || concurrency is null || anonymous is null)
+        if (errors.Count > 0 || !RequiredFieldsPresent(natsUrl, issuerSeed, source, jwks, concurrency, anonymous))
         {
             return BootstrapMapResult.Failure(string.Join(" ", errors));
         }
 
-        var bootstrap = new BootstrapConfig(natsUrl, issuerSeed, serviceUserSeed, xkeySeed, assertionKeys, source, jwks, concurrency, anonymous);
+        var bootstrap = new BootstrapConfig(natsUrl!, issuerSeed!, serviceUserSeed, xkeySeed, assertionKeys, source!, jwks!, concurrency!, anonymous!);
         return BootstrapMapResult.Success(bootstrap);
+    }
+
+    private static bool RequiredFieldsPresent(
+        string? natsUrl, SecretRef? issuerSeed, SourceConfig? source, JwksSettings? jwks, ConcurrencySettings? concurrency, AnonymousGlobalConfig? anonymous)
+    {
+        var topLevelPresent = natsUrl is not null && issuerSeed is not null;
+        var sectionsPresent = source is not null && jwks is not null && concurrency is not null && anonymous is not null;
+        return topLevelPresent && sectionsPresent;
     }
 
     private static void ValidateSchemaVersion(JsonElement root, List<string> errors)
@@ -162,27 +170,15 @@ public static class BootstrapFileMapper
         return new SecretRef(kind, value, path, name, key);
     }
 
-    private static bool TryParseSecretRefKind(string text, out SecretRefKind kind)
+    private static readonly IReadOnlyDictionary<string, SecretRefKind> SecretRefKindsByName = new Dictionary<string, SecretRefKind>(StringComparer.Ordinal)
     {
-        switch (text)
-        {
-            case "inline":
-                kind = SecretRefKind.Inline;
-                return true;
-            case "file":
-                kind = SecretRefKind.File;
-                return true;
-            case "k8sSecret":
-                kind = SecretRefKind.K8sSecret;
-                return true;
-            case "vault":
-                kind = SecretRefKind.Vault;
-                return true;
-            default:
-                kind = default;
-                return false;
-        }
-    }
+        ["inline"] = SecretRefKind.Inline,
+        ["file"] = SecretRefKind.File,
+        ["k8sSecret"] = SecretRefKind.K8sSecret,
+        ["vault"] = SecretRefKind.Vault,
+    };
+
+    private static bool TryParseSecretRefKind(string text, out SecretRefKind kind) => SecretRefKindsByName.TryGetValue(text, out kind);
 
     private static IReadOnlyList<AssertionKey>? MapAssertionKeys(JsonElement root, List<string> errors)
     {
@@ -248,7 +244,7 @@ public static class BootstrapFileMapper
         return kindText switch
         {
             "files" => MapFilesSource(el, warnStaleness.Value, maxStaleness.Value, reconnectBackoff.Value, errors),
-            "k8s" => MapK8sSource(el, warnStaleness.Value, maxStaleness.Value, reconnectBackoff.Value, errors),
+            "k8s" => MapK8SSource(el, warnStaleness.Value, maxStaleness.Value, reconnectBackoff.Value, errors),
             "postgres" => MapPostgresSource(el, warnStaleness.Value, maxStaleness.Value, reconnectBackoff.Value, errors),
             _ => Fail($"'source.kind' value '{kindText}' is not one of files|k8s|postgres.", errors),
         };
@@ -260,7 +256,7 @@ public static class BootstrapFileMapper
         return directory is null ? null : SourceConfig.Files(new FilesSourceSettings(directory), warn, max, backoff);
     }
 
-    private static SourceConfig? MapK8sSource(JsonElement el, DurationString warn, DurationString max, DurationString backoff, List<string> errors)
+    private static SourceConfig? MapK8SSource(JsonElement el, DurationString warn, DurationString max, DurationString backoff, List<string> errors)
     {
         var labelSelector = RequireString(el, "labelSelector", "source.labelSelector", errors);
         return labelSelector is null ? null : SourceConfig.K8s(new K8sSourceSettings(labelSelector), warn, max, backoff);
@@ -437,12 +433,10 @@ public static class BootstrapFileMapper
 
     private static void ValidateNoUnknownProperties(JsonElement obj, HashSet<string> allowed, string context, List<string> errors)
     {
-        foreach (var prop in obj.EnumerateObject())
+        var unknown = obj.EnumerateObject().Where(prop => !allowed.Contains(prop.Name));
+        foreach (var prop in unknown)
         {
-            if (!allowed.Contains(prop.Name))
-            {
-                errors.Add($"Unknown field '{prop.Name}' in {context} (strict schema, doc 09 bootstrap file).");
-            }
+            errors.Add($"Unknown field '{prop.Name}' in {context} (strict schema, doc 09 bootstrap file).");
         }
     }
 }

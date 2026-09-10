@@ -33,7 +33,7 @@ public sealed class ConfigActiveHealthCheck : IHealthCheck
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         var state = _stateProvider.Current;
-        var data = new Dictionary<string, object> { ["state"] = state.ToString() };
+        var data = new Dictionary<string, object>(StringComparer.Ordinal) { ["state"] = state.ToString() };
 
         var result = state == ServiceState.Serving
             ? HealthCheckResult.Healthy("Serving on a valid, active config.", data)
