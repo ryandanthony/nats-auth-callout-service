@@ -7,4 +7,13 @@
     <ProjectReference Include="..\AuthCallout.Contracts\AuthCallout.Contracts.csproj" />
   </ItemGroup>
 
+  <!-- P05: the pipeline's internal stage helpers (AppSelector, ProfileSelector, GrantBuilder,
+       AnonymousComposer, UnvalidatedIssuerReader) are internal — only ResolutionPipeline
+       (the IResolutionPipeline implementation P07/P13 consume) is the public surface — so
+       AuthCallout.Core.Tests needs direct access for table/unit testing each stage in
+       isolation, matching this project's decision-layer-in-isolation testing goal (doc 08). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="AuthCallout.Core.Tests" />
+  </ItemGroup>
+
 </Project>
