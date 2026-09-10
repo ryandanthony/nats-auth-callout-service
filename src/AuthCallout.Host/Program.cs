@@ -33,7 +33,7 @@ var routingProvider = await RoutingProviderFactory.CreateAsync(bootstrap.Source,
 // 4. Lifecycle primitives + component graph + config-apply loop (doc 08 tasks 2-5).
 var stateMachine = new ServiceStateMachine(bootstrap.Jwks.PrewarmRequired);
 var activeConfigSource = new ActiveConfigSource();
-var components = ComponentGraph.Build(bootstrap, secrets, activeConfigSource, stateMachine);
+var components = ComponentGraph.Build(bootstrap, secrets, activeConfigSource, stateMachine, secretResolver);
 var configApplyLoop = ConfigApplyLoopFactory.Create(routingProvider, bootstrap, activeConfigSource, stateMachine, components);
 
 // 5. Generic Host + minimal WebApplication for health on the pinned port (doc 08 task 1, D21).

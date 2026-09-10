@@ -6,6 +6,7 @@
 
 using AuthCallout.Contracts.Config;
 using AuthCallout.Contracts.Seams;
+using AuthCallout.Identity.Assertions;
 
 namespace AuthCallout.Host.Wiring;
 
@@ -13,10 +14,11 @@ namespace AuthCallout.Host.Wiring;
 public static class BootstrapSecrets
 {
     /// <summary>
-    /// Resolves the issuer seed (required), the optional service-user seed, and the optional
-    /// xkey seed. Every <see cref="ResolvedSecret"/> is revealed and disposed immediately —
+    /// Resolves the issuer seed (required), the optional service-user seed, the optional
+    /// xkey seed, and the assertion signing keyset (empty when unconfigured). Every
+    /// <see cref="ResolvedSecret"/> is revealed and disposed immediately —
     /// the plaintext string this returns is the value <c>UserJwtMinter</c>/<c>NatsAuthOpts</c>/
-    /// <c>CalloutCrypto</c> hold for the process lifetime, per their own constructors.
+    /// <c>CalloutCrypto</c>/<c>AssertionSigner</c> hold for the process lifetime, per their own constructors.
     /// </summary>
     /// <param name="bootstrap">The bootstrap config carrying the secret references.</param>
     /// <param name="secretResolver">The resolver to resolve each reference through.</param>
@@ -35,8 +37,27 @@ public static class BootstrapSecrets
         var xkeySeed = bootstrap.XkeySeed is { } xkeySeedRef
             ? await RevealAsync(xkeySeedRef, secretResolver, cancellationToken).ConfigureAwait(false)
             : null;
+        var assertionKeys = await ResolveAssertionKeysAsync(bootstrap.AssertionKeys, secretResolver, cancellationToken).ConfigureAwait(false);
 
-        return new ResolvedBootstrapSecrets(issuerSeed, serviceUserSeed, xkeySeed);
+        return new ResolvedBootstrapSecrets(issuerSeed, serviceUserSeed, xkeySeed, assertionKeys);
+    }
+
+    private static async Task<IReadOnlyList<ResolvedAssertionKey>> ResolveAssertionKeysAsync(
+        IReadOnlyList<AssertionKey>? assertionKeys, ISecretResolver secretResolver, CancellationToken cancellationToken)
+    {
+        if (assertionKeys is null || assertionKeys.Count == 0)
+        {
+            return [];
+        }
+
+        var resolved = new List<ResolvedAssertionKey>(assertionKeys.Count);
+        foreach (var key in assertionKeys)
+        {
+            var seed = await RevealAsync(key.Key, secretResolver, cancellationToken).ConfigureAwait(false);
+            resolved.Add(new ResolvedAssertionKey(key.Kid, seed, key.Active));
+        }
+
+        return resolved;
     }
 
     private static async Task<string> RevealAsync(

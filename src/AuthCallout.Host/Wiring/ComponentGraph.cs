@@ -24,10 +24,10 @@ namespace AuthCallout.Host.Wiring;
 /// responder -&gt; NATS connection manager), grouped into one factory so <c>Program.cs</c>'s
 /// top-level statements stay within the repo's class-coupling analyzer limit. Every
 /// collaborator here is built against its frozen Contracts interface, per the swarm ground
-/// rules — the one exception is <see cref="Wiring.PendingIdentityStoreWriter"/>, a documented
-/// P08 stand-in (see that type's own doc comment for the swap-out plan). Split across a few
-/// private helper methods (rather than one long method) purely to keep each method's own
-/// class-coupling count under the repo's analyzer limit.
+/// rules. The identity-store writer is selected by <see cref="IdentityStoreWriterFactory"/>
+/// (real KV-backed P08 writer when an assertion keyset is configured, else the fail-closed
+/// stand-in). Split across a few private helper methods (rather than one long method) purely
+/// to keep each method's own class-coupling count under the repo's analyzer limit.
 /// </summary>
 public static class ComponentGraph
 {
@@ -36,6 +36,7 @@ public static class ComponentGraph
     /// <param name="secrets">The resolved bootstrap secrets.</param>
     /// <param name="activeConfigSource">The active-config source every config-reading component subscribes to.</param>
     /// <param name="stateMachine">The service state machine the connection manager reports into.</param>
+    /// <param name="secretResolver">Resolves assertion-key public halves for the keys-bucket publish (P08 identity-store writer).</param>
     /// <returns>The fully-wired component graph.</returns>
     // CA2000 (dispose before scope loss) does not apply to any disposable constructed in this
     // method or its private helpers below (JwksCacheManager, UserJwtMinter, CalloutCrypto,
@@ -46,19 +47,19 @@ public static class ComponentGraph
     // at its own CA2000 suppression.
 #pragma warning disable CA2000
     public static ComponentGraphResult Build(
-        BootstrapConfig bootstrap, ResolvedBootstrapSecrets secrets, ActiveConfigSource activeConfigSource, ServiceStateMachine stateMachine)
+        BootstrapConfig bootstrap, ResolvedBootstrapSecrets secrets, ActiveConfigSource activeConfigSource, ServiceStateMachine stateMachine, ISecretResolver secretResolver)
     {
         ArgumentNullException.ThrowIfNull(bootstrap);
         ArgumentNullException.ThrowIfNull(secrets);
         ArgumentNullException.ThrowIfNull(activeConfigSource);
         ArgumentNullException.ThrowIfNull(stateMachine);
+        ArgumentNullException.ThrowIfNull(secretResolver);
 
-        var identityStoreWriter = new PendingIdentityStoreWriter();
         var pipelineParts = BuildPipeline(bootstrap, secrets, activeConfigSource);
-        var natsParts = BuildNatsSide(bootstrap, secrets, activeConfigSource, stateMachine, pipelineParts, identityStoreWriter);
+        var natsParts = BuildNatsSide(bootstrap, secrets, activeConfigSource, stateMachine, pipelineParts, secretResolver);
 
         return new ComponentGraphResult(
-            identityStoreWriter, pipelineParts.JwksCacheManager, natsParts.Connection, natsParts.ConnectionManager, new HostMetrics(stateMachine));
+            natsParts.IdentityStoreWriter, pipelineParts.JwksCacheManager, natsParts.Connection, natsParts.ConnectionManager, new HostMetrics(stateMachine));
     }
 
     private static PipelineParts BuildPipeline(BootstrapConfig bootstrap, ResolvedBootstrapSecrets secrets, ActiveConfigSource activeConfigSource)
@@ -77,9 +78,11 @@ public static class ComponentGraph
         ActiveConfigSource activeConfigSource,
         ServiceStateMachine stateMachine,
         PipelineParts pipelineParts,
-        IIdentityStoreWriter identityStoreWriter)
+        ISecretResolver secretResolver)
     {
         var natsConnection = new NatsConnection(BuildNatsOpts(bootstrap.NatsUrl, secrets.ServiceUserSeed));
+
+        var identityStoreWriter = IdentityStoreWriterFactory.Create(natsConnection, secrets, secretResolver);
 
         var eventEmitter = new EventEmitter(
             natsConnection,
@@ -94,7 +97,7 @@ public static class ComponentGraph
         var connectionManager = new NatsConnectionManager(
             natsConnection, responder, stateMachine, onDiagnostic: static msg => Console.Error.WriteLine($"INFO: {msg}"));
 
-        return new NatsParts(natsConnection, connectionManager);
+        return new NatsParts(identityStoreWriter, natsConnection, connectionManager);
     }
 #pragma warning restore CA2000
 
@@ -108,5 +111,5 @@ public static class ComponentGraph
 
     private sealed record PipelineParts(JwksCacheManager JwksCacheManager, IResolutionPipeline ResolutionPipeline, IUserJwtMinter Minter, ICalloutCrypto CalloutCrypto);
 
-    private sealed record NatsParts(NatsConnection Connection, NatsConnectionManager ConnectionManager);
+    private sealed record NatsParts(IIdentityStoreWriter IdentityStoreWriter, NatsConnection Connection, NatsConnectionManager ConnectionManager);
 }
