@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- P15 sample app (dev/ only, doc 08 §Local development "Task service"): a second,
+       independent application on tasks.>, different issuer `match`, and a "worker" service
+       profile using autoAddSessionAccess to resolve callers - proves application isolation
+       (ADR 0001) and the anonymous grant union across apps (ADR 0004). Not referenced by
+       src/ or tests/; both AppHosts add it as Projects.TaskService. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NATS.Net" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Shared/SampleSupport.csproj" />
+  </ItemGroup>
+
+</Project>

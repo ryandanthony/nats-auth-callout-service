@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Small internal helper library shared by the two P15 sample apps (NoteService,
+       TaskService), NOT a shipped src/ project and not referenced by anything outside
+       dev/samples/. Keeps both samples "thin" per doc 08 §Local development ("Both are
+       thin: connect, publish/subscribe a couple of subjects, and log the verdict") by
+       factoring out the doc 06 identity-propagation client/subscriber steps that would
+       otherwise be duplicated verbatim in both. Only ever built as part of the dev/
+       tree; no ProjectReference from src/ or tests/. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CA1014</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NATS.Net" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- AppSlug (bucket/subject naming, ADR 0013) from Contracts; AssertionSigner.Verify
+         (ADR 0011) from Identity. Neither pulls transport/storage deps beyond what these
+         samples need anyway (NATS.Net for KV, IdentityModel for reading the OIDC token's
+         own claims). -->
+    <ProjectReference Include="../../../src/AuthCallout.Contracts/AuthCallout.Contracts.csproj" />
+    <ProjectReference Include="../../../src/AuthCallout.Identity/AuthCallout.Identity.csproj" />
+  </ItemGroup>
+
+</Project>

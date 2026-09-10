@@ -1,0 +1,113 @@
+{
+  "realm": "dev",
+  "accessTokenLifespan": 300,
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "name": "notes-editor",
+        "composite": false,
+        "clientRole": false,
+        "attributes": {}
+      },
+      {
+        "name": "tasks-worker",
+        "composite": false,
+        "clientRole": false,
+        "attributes": {}
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "notes-web",
+      "enabled": true,
+      "redirectUris": [],
+      "webOrigins": [],
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "nats-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "false",
+            "included.custom.audience": "nats",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "tasks-web",
+      "enabled": true,
+      "redirectUris": [],
+      "webOrigins": [],
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "nats-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "false",
+            "included.custom.audience": "nats",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "note-user",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Note",
+      "lastName": "User",
+      "email": "note-user@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "note-pass",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "notes-editor"
+      ]
+    },
+    {
+      "username": "task-user",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Task",
+      "lastName": "User",
+      "email": "task-user@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "task-pass",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "tasks-worker"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- P15 sample app (dev/ only, doc 08 §Local development "Note service"): connects with an
+       OIDC token from the dev Keycloak realm, publishes/subscribes on notes.>, and exercises
+       the doc 06 identity-propagation sequence end to end (fetch its own assertion, attach
+       Callout-Identity on publish; resolve an incoming publisher's identity as a subscriber).
+       Not referenced by src/ or tests/; both AppHosts add it as Projects.NoteService. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NATS.Net" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Shared/SampleSupport.csproj" />
+  </ItemGroup>
+
+</Project>

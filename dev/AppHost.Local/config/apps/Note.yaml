@@ -1,0 +1,28 @@
+schemaVersion: 1
+name: notes
+targetAccount: NOTES
+issuer:
+  authority: http://localhost:8080/realms/dev
+  jwksCache: 5m
+  validateAudience: true
+  audience: [nats]
+  clockSkew: 60s
+  allowedAlgorithms: [RS256]
+match:
+  azp: [notes-web]
+identityPropagation:
+  enabled: true
+anonymousProfile:
+  subscribe: [notes.public.>]
+events:
+  success: notes.events.auth.success
+  failure: notes.events.auth.failure
+profiles:
+  - name: editor
+    match:
+      realm_access.roles: [notes-editor]
+    grant:
+      publish: [notes.dev.>]
+      subscribe: [notes.dev.>]
+    nameClaim: preferred_username
+    autoAddSessionAccess: true

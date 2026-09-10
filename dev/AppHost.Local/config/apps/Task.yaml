@@ -1,0 +1,28 @@
+schemaVersion: 1
+name: tasks
+targetAccount: TASKS
+issuer:
+  authority: http://localhost:8080/realms/dev
+  jwksCache: 5m
+  validateAudience: true
+  audience: [nats]
+  clockSkew: 60s
+  allowedAlgorithms: [RS256]
+match:
+  azp: [tasks-web]
+identityPropagation:
+  enabled: true
+anonymousProfile:
+  subscribe: [tasks.public.>]
+events:
+  success: tasks.events.auth.success
+  failure: tasks.events.auth.failure
+profiles:
+  - name: worker
+    match:
+      realm_access.roles: [tasks-worker]
+    grant:
+      publish: [tasks.dev.>]
+      subscribe: [tasks.dev.>]
+    nameClaim: preferred_username
+    autoAddSessionAccess: true
