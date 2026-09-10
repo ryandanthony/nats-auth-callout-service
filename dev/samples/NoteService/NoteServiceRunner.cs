@@ -56,9 +56,9 @@ public static class NoteServiceRunner
     public static async Task RunAsync()
     {
         var natsUrl = DevEnvironment.ReadNatsUrl();
-        var token = DevEnvironment.RequireOidcToken(
-            "NOTE_OIDC_TOKEN",
-            "a Keycloak access token for the 'notes-web' client, realm_access.roles containing 'notes-editor'");
+        var keycloakBaseUrl = DevEnvironment.ReadKeycloakBaseUrl();
+        var token = await DevOidcTokenFetcher.FetchAccessTokenAsync(
+            keycloakBaseUrl, realm: "dev", clientId: "notes-web", username: "note-user", password: "note-pass", CancellationToken.None);
 
         Console.WriteLine($"[note] connecting to {natsUrl} with an OIDC bearer token...");
         await using var client = new NatsClient(new NatsOpts

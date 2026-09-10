@@ -13,6 +13,18 @@ public static class DevEnvironment
     /// <value>The default NATS URL, <c>nats://localhost:4222</c> (AppHost.Local's external port, doc 08).</value>
     public static string DefaultNatsUrl => "nats://localhost:4222";
 
+    /// <summary>Gets the default Keycloak base URL used when Aspire's injected value is absent.</summary>
+    /// <value>The default Keycloak base URL, <c>http://localhost:8080</c> (Aspire's <c>AddKeycloak("idp", 8080)</c>, doc 08).</value>
+    public static string DefaultKeycloakBaseUrl => "http://localhost:8080";
+
+    /// <summary>
+    /// Reads the Keycloak base URL: Aspire's injected service-discovery variable for the
+    /// resource named <c>idp</c> if present, else <see cref="DefaultKeycloakBaseUrl"/>.
+    /// </summary>
+    /// <returns>The effective Keycloak base URL.</returns>
+    public static string ReadKeycloakBaseUrl() =>
+        Environment.GetEnvironmentVariable("services__idp__http__0") ?? DefaultKeycloakBaseUrl;
+
     /// <summary>
     /// Reads the NATS connection URL: Aspire's injected <c>NATS_URI</c> (doc 08 §AppHost.Local
     /// `WithReference(nats)`) if present, else <see cref="DefaultNatsUrl"/> for running the
@@ -21,20 +33,4 @@ public static class DevEnvironment
     /// <returns>The effective NATS connection URL.</returns>
     public static string ReadNatsUrl() =>
         Environment.GetEnvironmentVariable("NATS_URI") ?? DefaultNatsUrl;
-
-    /// <summary>Reads a required OIDC bearer token from the named environment variable, failing fast with a clear message if unset.</summary>
-    /// <param name="variableName">The environment variable carrying the token.</param>
-    /// <param name="expectedShapeDescription">A short description of the expected token (for the failure message).</param>
-    /// <returns>The token value.</returns>
-    /// <exception cref="InvalidOperationException">The variable is unset or empty.</exception>
-    public static string RequireOidcToken(string variableName, string expectedShapeDescription)
-    {
-        var token = Environment.GetEnvironmentVariable(variableName);
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            throw new InvalidOperationException($"{variableName} must be set ({expectedShapeDescription}).");
-        }
-
-        return token;
-    }
 }

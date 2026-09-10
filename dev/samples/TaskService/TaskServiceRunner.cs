@@ -57,9 +57,9 @@ public static class TaskServiceRunner
     public static async Task RunAsync()
     {
         var natsUrl = DevEnvironment.ReadNatsUrl();
-        var token = DevEnvironment.RequireOidcToken(
-            "TASK_OIDC_TOKEN",
-            "a Keycloak access token for the 'tasks-web' client, realm_access.roles containing 'tasks-worker'");
+        var keycloakBaseUrl = DevEnvironment.ReadKeycloakBaseUrl();
+        var token = await DevOidcTokenFetcher.FetchAccessTokenAsync(
+            keycloakBaseUrl, realm: "dev", clientId: "tasks-web", username: "task-user", password: "task-pass", CancellationToken.None);
 
         Console.WriteLine($"[task] connecting to {natsUrl} with an OIDC bearer token...");
         await using var client = new NatsClient(new NatsOpts
