@@ -31,6 +31,7 @@ public static class DenyReasonMap
         [DenyReason.UnsafeTemplateValue] = EventReason.GrantConstructionFailed,
         [DenyReason.NameClaimError] = EventReason.GrantConstructionFailed,
         [DenyReason.AnonymousNoContributions] = EventReason.InvalidToken,
+        [DenyReason.IdentityStoreWriteFailed] = EventReason.GrantConstructionFailed,
     };
 
     /// <summary>

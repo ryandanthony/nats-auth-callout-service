@@ -61,4 +61,14 @@ public enum DenyReason
 
     /// <summary>No token was presented and the anonymous union grant had zero contributions across all configured applications (D15).</summary>
     AnonymousNoContributions,
+
+    /// <summary>
+    /// The grant itself was constructed successfully, but the post-grant identity-store
+    /// write (session JWT / assertion / discovery KV, doc 07) failed, so the responder
+    /// fails closed and denies rather than replying without propagation (P07/P08,
+    /// <see cref="AuthCallout.Contracts.Seams.IdentityStoreWriteResult"/>). This is the only
+    /// <see cref="DenyReason"/> the resolution pipeline never produces — it originates in the
+    /// responder after a successful <see cref="GrantedDecision"/>.
+    /// </summary>
+    IdentityStoreWriteFailed,
 }

@@ -50,6 +50,7 @@ public sealed class DenyReasonMapTests
     [InlineData(DenyReason.UnsafeTemplateValue, EventReason.GrantConstructionFailed)]
     [InlineData(DenyReason.NameClaimError, EventReason.GrantConstructionFailed)]
     [InlineData(DenyReason.AnonymousNoContributions, EventReason.InvalidToken)]
+    [InlineData(DenyReason.IdentityStoreWriteFailed, EventReason.GrantConstructionFailed)]
     public void ToEventReason_MapsExactlyAsSpecified(DenyReason reason, EventReason expected)
     {
         var actual = reason.ToEventReason();
@@ -77,6 +78,7 @@ public sealed class DenyReasonMapTests
             DenyReason.UnsafeTemplateValue,
             DenyReason.NameClaimError,
             DenyReason.AnonymousNoContributions,
+            DenyReason.IdentityStoreWriteFailed,
         ]);
 
         var allReasons = Enum.GetValues<DenyReason>();
