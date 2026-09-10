@@ -4,12 +4,21 @@
     <UserSecretsId>dotnet-AuthCallout.Host-be8fee1a-a9d8-48b7-b683-2bf075b0b6e2</UserSecretsId>
   </PropertyGroup>
 
+  <!-- Health endpoints are a minimal WebApplication on a dedicated port (doc 08 Health
+       and readiness), not a Worker; the Worker SDK doesn't pull in ASP.NET Core's minimal-API
+       / health-check-endpoint surface by default, so it's added explicitly here rather than
+       switching the whole project to Microsoft.NET.Sdk.Web (which would also pull in MVC/
+       Razor this service never needs, doc 08 Runtime and trimming: "not an ASP.NET MVC/Razor
+       app"). -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Hosting" />
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 
   <ItemGroup>
