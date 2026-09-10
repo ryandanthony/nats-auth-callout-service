@@ -18,17 +18,21 @@ public readonly struct CalloutXkeyOpenResult : IEquatable<CalloutXkeyOpenResult>
     }
 
     /// <summary>Gets a value indicating whether the request was accepted (not an ADR 0018 mismatch).</summary>
+    /// <value>True when the request was accepted.</value>
     public bool Accepted { get; }
 
     /// <summary>Gets the plaintext payload, when <see cref="Accepted"/> is true.</summary>
+    /// <value>The plaintext payload, or null when rejected.</value>
 #pragma warning disable CA1819 // Raw message payload, matching CalloutCryptoResult/NATS.Net's byte[]-based message API.
     public byte[]? Payload { get; }
 #pragma warning restore CA1819
 
     /// <summary>Gets the server's ephemeral public xkey, when the request was encrypted; null for a plaintext request.</summary>
+    /// <value>The server's ephemeral public xkey, or null for a plaintext request.</value>
     public string? ServerXkeyPublic { get; }
 
     /// <summary>Gets the human-readable rejection reason, when <see cref="Accepted"/> is false.</summary>
+    /// <value>The human-readable rejection reason, or null when accepted.</value>
     public string? RejectionReason { get; }
 
     public static bool operator ==(CalloutXkeyOpenResult left, CalloutXkeyOpenResult right) => left.Equals(right);
