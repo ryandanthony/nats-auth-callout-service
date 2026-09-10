@@ -48,6 +48,7 @@ Every element traces to an ADR (see the [ADR log](../architecture-decision-log/R
 - [ADR 0015](../architecture-decision-log/0015-schema-versioning-strategy.md) — schema versioning strategy
 - [ADR 0016](../architecture-decision-log/0016-token-validation-parameters.md) — token validation parameters
 - [ADR 0017](../architecture-decision-log/0017-watch-loss-and-connection-loss-semantics.md) — watch-loss and connection-loss semantics
+- [ADR 0018](../architecture-decision-log/0018-xkey-encrypted-callout.md) — xkey-encrypted callout
 
 ## Principles
 

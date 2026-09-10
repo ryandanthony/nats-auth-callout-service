@@ -179,7 +179,7 @@ Why exactly-once handling is correct here, not just efficient:
 Requirements for running N instances:
 
 - **Shared signing material.** All instances load the same issuer seed and the same assertion keyset ([ADR 0014](../architecture-decision-log/0014-key-rotation-orchestration.md)) from their secret sources, so any instance's signature verifies.
-- **Shared xkey (if enabled).** If the callout uses `xkey` encryption on `$SYS.REQ.USER.AUTH`, every instance needs the same xkey seed to decrypt requests.
+- **Shared xkey (if enabled).** If the callout uses `xkey` encryption on `$SYS.REQ.USER.AUTH`, every instance needs the same xkey seed to decrypt requests ([ADR 0018](../architecture-decision-log/0018-xkey-encrypted-callout.md) is the authority for the xkey decision: optional via bootstrap `xkeySeed`, fail-closed on an encrypted/plaintext mismatch).
 - **Same active config.** Each instance runs its own config provider; with the files or CRD source all instances converge on the same applications. Brief per-instance skew during a reload only means two instances might momentarily grant slightly different configs; both are valid, and new connections settle once all instances see the new config ([05](./05-runtime-and-lifecycle.md) new-connections-only semantics).
 - **Each instance is its own `auth-svc` connection** in the dedicated auth account, authenticated by the service user seed and exempt via `auth_users`.
 

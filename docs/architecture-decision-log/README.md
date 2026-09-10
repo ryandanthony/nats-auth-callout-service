@@ -25,3 +25,4 @@ The [design](../design/README.md) unifies these ADRs into a cohesive, language-a
 | [0015](./0015-schema-versioning-strategy.md) | Schema versioning strategy | proposed |
 | [0016](./0016-token-validation-parameters.md) | Token validation parameters | proposed |
 | [0017](./0017-watch-loss-and-connection-loss-semantics.md) | Watch-loss and connection-loss semantics | proposed |
+| [0018](./0018-xkey-encrypted-callout.md) | xkey-encrypted callout | proposed |
