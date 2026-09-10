@@ -155,13 +155,57 @@ public readonly struct AppSlug : IEquatable<AppSlug>
     public string OidcTokensReadSubject => $"$KV.{OidcTokensBucket}.>";
 
     /// <summary>The physical <c>$KV.</c> subject for a single assertion self-lookup entry (ADR 0013 §Grant subjects), keyed by the client's own <c>jti</c> (or <c>sub</c> fallback, doc 07).</summary>
-    /// <param name="jtiOrSubjectFallback">The client's own <c>jti</c> (or <c>sub</c> fallback).</param>
+    /// <param name="jtiOrSubjectFallback">The client's own <c>jti</c> (or <c>sub</c> fallback). Sanitized via <see cref="SanitizeKeySegment"/> before use, since <c>jti</c> comes from the token and must be key-safe (ADR 0013).</param>
     /// <returns>The physical self-lookup subject for that key.</returns>
     public string AssertionSelfLookupSubject(string jtiOrSubjectFallback)
     {
         ArgumentException.ThrowIfNullOrEmpty(jtiOrSubjectFallback);
-        return $"$KV.{AssertionsBucket}.{jtiOrSubjectFallback}";
+        return $"$KV.{AssertionsBucket}.{SanitizeKeySegment(jtiOrSubjectFallback)}";
     }
+
+    /// <summary>
+    /// The single source of truth for ADR 0013's key-safety transform applied to a dynamic
+    /// key segment (<c>jti</c>, <c>id</c>, <c>kid</c>) at write time: lowercase, then replace
+    /// any run of characters outside <c>[a-z0-9-]</c> with a single <c>_</c>. Both the granted
+    /// self-lookup subject (resolution pipeline) and the identity-store write key (store writer)
+    /// pass a segment through this method, so a client's granted subject and the key actually
+    /// written can never diverge for a <c>jti</c> containing unsafe characters.
+    /// </summary>
+    /// <param name="segment">The raw dynamic key segment (e.g. a token <c>jti</c>).</param>
+    /// <returns>The key-safe segment.</returns>
+    /// <exception cref="ArgumentException"><paramref name="segment"/> is null or empty.</exception>
+    public static string SanitizeKeySegment(string segment)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(segment);
+
+        var builder = new StringBuilder(segment.Length);
+        var lastWasSeparator = false;
+        foreach (var ch in segment)
+        {
+#pragma warning disable S4040 // ADR 0013 requires lowercase output (a key segment, not a comparison); ToUpperInvariant would produce the wrong case.
+            var lower = char.ToLowerInvariant(ch);
+#pragma warning restore S4040
+            if (IsKeySafe(lower))
+            {
+                builder.Append(lower);
+                lastWasSeparator = false;
+            }
+            else if (!lastWasSeparator)
+            {
+                builder.Append('_');
+                lastWasSeparator = true;
+            }
+            else
+            {
+                // Run of unsafe characters already collapsed to a single '_'; skip.
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static bool IsKeySafe(char lower) =>
+        lower is >= 'a' and <= 'z' or >= '0' and <= '9' || lower == '-';
 
     /// <summary>Gets the physical <c>$KV.</c> subject granting read of the whole assertion-keys bucket (ADR 0013 §Grant subjects), added to every authenticated grant.</summary>
     /// <value>The physical assertion-keys read subject.</value>
