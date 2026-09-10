@@ -103,7 +103,7 @@ public static class ComponentGraph
         Url = natsUrl,
         Name = "auth-callout",
         RetryOnInitialConnect = true, // ADR 0017 §1: always attempt recovery, including the first connect.
-        AuthOpts = serviceUserSeed is not null ? new NatsAuthOpts { Seed = serviceUserSeed } : NatsAuthOpts.Default,
+        AuthOpts = serviceUserSeed is not null ? new NatsAuthOpts { Seed = serviceUserSeed, NKey = NATS.NKeys.KeyPair.FromSeed(serviceUserSeed).GetPublicKey() } : NatsAuthOpts.Default,
     };
 
     private sealed record PipelineParts(JwksCacheManager JwksCacheManager, IResolutionPipeline ResolutionPipeline, IUserJwtMinter Minter, ICalloutCrypto CalloutCrypto);
