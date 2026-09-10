@@ -47,14 +47,14 @@ namespace AuthCallout.Nats.Events;
 /// In every branch, a null/absent subject means <b>no event</b>, silently (ADR 0008: "when
 /// no subject is configured, no event is published").
 /// </summary>
-internal static class EventSubjectResolver
+public static class EventSubjectResolver
 {
     /// <summary>Resolves the publish subject for a decision against the active config, or null to skip.</summary>
     /// <param name="decision">The resolution outcome to route.</param>
     /// <param name="routing">The active routing aggregate (for the selected application's event subjects, if any).</param>
     /// <param name="anonymousEvents">The bootstrap-global anonymous event subjects (ADR 0008), or null when unset.</param>
     /// <returns>The subject to publish to, or null when no subject is configured for this outcome.</returns>
-    internal static string? Resolve(Decision decision, RoutingConfig routing, EventSubjects? anonymousEvents)
+    public static string? Resolve(Decision decision, RoutingConfig routing, EventSubjects? anonymousEvents)
     {
         ArgumentNullException.ThrowIfNull(decision);
         ArgumentNullException.ThrowIfNull(routing);

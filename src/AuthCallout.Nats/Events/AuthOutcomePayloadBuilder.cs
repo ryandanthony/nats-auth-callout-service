@@ -13,7 +13,7 @@ namespace AuthCallout.Nats.Events;
 /// 09 §1, P09 task 1). A pure function of its inputs, unit-tested directly without any NATS
 /// or config dependency.
 /// </summary>
-internal static class AuthOutcomePayloadBuilder
+public static class AuthOutcomePayloadBuilder
 {
     private const string SuccessOutcome = "success";
     private const string FailureOutcome = "failure";
@@ -36,7 +36,7 @@ internal static class AuthOutcomePayloadBuilder
     /// <param name="userNKey">The connecting user's NKey, or null when unavailable to the caller.</param>
     /// <param name="timestamp">The decision time (UTC).</param>
     /// <returns>The built payload, ready to serialize.</returns>
-    internal static AuthOutcomeEventPayload Build(Decision decision, string? userNKey, DateTimeOffset timestamp)
+    public static AuthOutcomeEventPayload Build(Decision decision, string? userNKey, DateTimeOffset timestamp)
     {
         ArgumentNullException.ThrowIfNull(decision);
 
