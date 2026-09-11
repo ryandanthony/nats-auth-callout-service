@@ -65,6 +65,26 @@ NATS permission grants reference the underlying KV subjects, `$KV.<bucket>.<key>
 
 The minter builds these subjects from the same mapping function the store writer uses, so grants and writes can never diverge.
 
+### JetStream wire-level subjects a real KV read requires
+
+The `$KV.<bucket>.<key>` subject above is the *logical* KV grant, but a real JetStream KV
+client (`NatsKVContext`) does not read entries by subscribing to that subject — it issues
+JetStream API requests against the bucket's backing stream (`KV_<bucket>`) and receives the
+replies on its connection inbox. So for every bucket a grant can read, the minter also adds:
+
+- **Publish** `$JS.API.STREAM.INFO.KV_<bucket>` and `$JS.API.DIRECT.GET.KV_<bucket>` — scoped
+  to that single backing stream, never the account-wide `$JS.API.>`, so a grant reaches only
+  the buckets it was granted `$KV` read on.
+- **Subscribe** `_INBOX.>` (once per grant that reads at least one bucket) — the request-reply
+  path for those JetStream API calls. NATS.NET assigns each connection an unpredictable
+  `_INBOX.<nuid>` prefix the callout cannot know in advance, so the wildcard inbox is the
+  minimal grant that works.
+
+These are auto-added by `GrantBuilder` alongside the `$KV.*` reads (they are not something
+application config must specify), keeping the logical model in config and the wire-level
+plumbing in the callout. Without them the read sequence in [doc 06](../design/06-identity-propagation-sequence.md)
+cannot complete for a real client.
+
 ### Single source of truth
 
 The mapping is implemented **once** as a pure function (`BucketNaming` in `AuthCallout.Contracts`) shared by the store writer, the grant minter, and the discovery-descriptor emitter. The discovery descriptor ([ADR 0012](./0012-identity-propagation-toggle-and-discovery.md)) publishes the resolved bucket and key names at runtime, so consumers **discover** them rather than re-deriving the rule, keeping this ADR the authority for the callout side while the descriptor is the authority for consumers.

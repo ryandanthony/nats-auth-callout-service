@@ -22,15 +22,11 @@ profiles:
     match:
       realm_access.roles: [notes-editor]
     grant:
-      # notes.dev.> is the demo subject. The $JS.API.STREAM.INFO/$JS.API.DIRECT.GET and
-      # _INBOX.> entries are NOT part of ADR 0013's KV grant contract (GrantBuilder only
-      # adds the $KV.<bucket>.<key> subjects for keys/discovery/token reads) - they're what
-      # NATS.Net's KV client (NatsKVContext.GetStoreAsync/GetEntryAsync, used by
-      # CalloutDiscovery/CalloutSelfAssertion below) itself needs under the hood to look up
-      # a bucket's backing stream and receive the reply, on top of the $KV.* subjects. Added
-      # here per-profile since GrantBuilder doesn't add them automatically (flagged to the
-      # coordinator; may move into GrantBuilder later).
-      publish: [notes.dev.>, "$JS.API.STREAM.INFO.>", "$JS.API.DIRECT.GET.>"]
-      subscribe: [notes.dev.>, "_INBOX.>"]
+      # Only the app's own subjects are configured. The callout auto-adds the KV read grants
+      # (keys/discovery/token/assertion $KV.* reads) AND the JetStream wire-level subjects a
+      # real KV client needs ($JS.API.STREAM.INFO/DIRECT.GET per bucket + _INBOX.> reply path),
+      # so identity-propagation reads work without any KV plumbing in app config (ADR 0013).
+      publish: [notes.dev.>]
+      subscribe: [notes.dev.>]
     nameClaim: preferred_username
     autoAddSessionAccess: true

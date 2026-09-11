@@ -50,8 +50,8 @@ internal static class GrantBuilder
             return GrantBuildResult.Deny(variableError);
         }
 
-        var publish = BuildPublish(profile, resolvedVariables);
-        var subscribe = BuildSubscribe(application, profile, resolvedVariables, claims, out var selfLookupKey);
+        var subscribe = BuildSubscribe(application, profile, resolvedVariables, claims, out var selfLookupKey, out var readBuckets);
+        var publish = BuildPublish(profile, resolvedVariables, readBuckets);
 
         var decision = new GrantedDecision(
             Application: application.Name,
@@ -69,13 +69,26 @@ internal static class GrantBuilder
     }
 
 #pragma warning disable S4017 // IReadOnlyDictionary<string, IReadOnlyList<string>> is VariableResolver/TemplateExpander's actual shared output shape (see their own S4017 suppressions), not incidental nesting.
-    private static IReadOnlyList<string> BuildPublish(Profile profile, IReadOnlyDictionary<string, IReadOnlyList<string>> resolvedVariables)
+    private static IReadOnlyList<string> BuildPublish(
+        Profile profile, IReadOnlyDictionary<string, IReadOnlyList<string>> resolvedVariables, IReadOnlyList<string> readBuckets)
 #pragma warning restore S4017
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var publish = new List<string>();
         SubjectListBuilder.AddRange(publish, seen, profile.Grant.Publish);
         SubjectListBuilder.AddRange(publish, seen, TemplateExpander.ExpandAll(profile.PublishTemplates, resolvedVariables));
+
+        // For every KV bucket this grant can read (via the $KV.* subscribe subjects added in
+        // BuildSubscribe), a real JetStream KV client (NatsKVContext) also has to publish
+        // stream-info / direct-get requests to that bucket's backing stream. Scoped per backing
+        // stream (not $JS.API.>), so the grant reaches only the buckets it was granted (Ryan's
+        // option A: the callout auto-adds the wire-level JS-API plumbing ADR 0013's logical
+        // $KV grant implies). The _INBOX reply path is added on the subscribe side.
+        foreach (var bucket in readBuckets)
+        {
+            SubjectListBuilder.AddRange(publish, seen, AppSlug.JetStreamReadApiPublishSubjects(bucket));
+        }
+
         return publish;
     }
 
@@ -85,7 +98,8 @@ internal static class GrantBuilder
         Profile profile,
         IReadOnlyDictionary<string, IReadOnlyList<string>> resolvedVariables,
         IClaimsAccessor claims,
-        out string? selfLookupKey)
+        out string? selfLookupKey,
+        out IReadOnlyList<string> readBuckets)
 #pragma warning restore S4017
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -94,24 +108,35 @@ internal static class GrantBuilder
         SubjectListBuilder.AddRange(subscribe, seen, TemplateExpander.ExpandAll(profile.SubscribeTemplates, resolvedVariables));
 
         var slug = application.Slug;
+        var buckets = new List<string>();
 
         // doc 03 §Grant construction: autoAddSessionAccess -> token-bucket read.
         if (profile.AutoAddSessionAccess)
         {
             SubjectListBuilder.AddOne(subscribe, seen, slug.OidcTokensReadSubject);
+            buckets.Add(slug.OidcTokensBucket);
         }
 
         // doc 03/07: every authenticated (non-anonymous) grant gets keys + discovery reads,
         // unconditionally, regardless of the identity-propagation toggle (ADR 0011/0012).
         SubjectListBuilder.AddOne(subscribe, seen, AppSlug.AssertionKeysReadSubject);
+        buckets.Add(AppSlug.AssertionKeysBucket);
         SubjectListBuilder.AddOne(subscribe, seen, slug.DiscoveryReadSubject);
+        buckets.Add(slug.DiscoveryBucket);
 
         selfLookupKey = ResolveSelfLookupKey(application, claims);
         if (selfLookupKey is { } key)
         {
             SubjectListBuilder.AddOne(subscribe, seen, slug.AssertionSelfLookupSubject(key));
+            buckets.Add(slug.AssertionsBucket);
         }
 
+        // Reply path for the JetStream KV read requests added on the publish side: the KV
+        // client receives stream-info / direct-get replies on its connection inbox. Added once
+        // because the grant reads at least one KV bucket (keys + discovery are unconditional).
+        SubjectListBuilder.AddOne(subscribe, seen, AppSlug.ClientInboxSubscribeSubject);
+
+        readBuckets = buckets;
         return subscribe;
     }
 

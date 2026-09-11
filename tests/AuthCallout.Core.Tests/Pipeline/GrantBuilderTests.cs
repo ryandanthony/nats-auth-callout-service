@@ -33,11 +33,20 @@ public sealed class GrantBuilderTests
 
         Assert.Null(result.DenyReason);
         var decision = result.Decision!;
-        Assert.Equal(["notes.create"], decision.Publish);
 
-        // Every authenticated grant gets keys + discovery reads, unconditionally (doc 03/07).
+        // Static publish subject, plus the JetStream API subjects a real KV client needs to
+        // read the unconditional keys + discovery buckets (option A: callout auto-adds them).
+        Assert.Contains("notes.create", decision.Publish);
+        Assert.Contains("$JS.API.STREAM.INFO.KV_callout_assertion_keys", decision.Publish);
+        Assert.Contains("$JS.API.DIRECT.GET.KV_callout_assertion_keys", decision.Publish);
+        Assert.Contains("$JS.API.STREAM.INFO.KV_callout_apps_notes_discovery", decision.Publish);
+        Assert.Contains("$JS.API.DIRECT.GET.KV_callout_apps_notes_discovery", decision.Publish);
+
+        // Every authenticated grant gets keys + discovery reads, unconditionally (doc 03/07),
+        // plus the client inbox for the KV read reply path.
         Assert.Contains("$KV.callout_assertion_keys.>", decision.Subscribe);
         Assert.Contains("$KV.callout_apps_notes_discovery.descriptor", decision.Subscribe);
+        Assert.Contains("_INBOX.>", decision.Subscribe);
         Assert.Contains("notes.updates", decision.Subscribe);
     }
 
@@ -51,6 +60,22 @@ public sealed class GrantBuilderTests
         var result = GrantBuilder.Build(application, profile, claims, "user-1", "https://issuer.example.com", FixedExpiry);
 
         Assert.Contains("$KV.callout_apps_notes_oidc_tokens.>", result.Decision!.Subscribe);
+    }
+
+    [Fact]
+    public void Build_AutoAddSessionAccessTrue_AddsTokenBucketJetStreamReadApiSubjects()
+    {
+        var application = PipelineTestBuilders.Application(name: "notes");
+        var profile = PipelineTestBuilders.Profile(autoAddSessionAccess: true);
+        var claims = ClaimsAccessor.Parse("""{ "sub": "user-1" }""");
+
+        var result = GrantBuilder.Build(application, profile, claims, "user-1", "https://issuer.example.com", FixedExpiry);
+
+        // A real KV client reading the token bucket needs its backing stream's JS-API subjects
+        // (option A), on top of the $KV read subject, plus the inbox reply path.
+        Assert.Contains("$JS.API.STREAM.INFO.KV_callout_apps_notes_oidc_tokens", result.Decision!.Publish);
+        Assert.Contains("$JS.API.DIRECT.GET.KV_callout_apps_notes_oidc_tokens", result.Decision!.Publish);
+        Assert.Contains("_INBOX.>", result.Decision!.Subscribe);
     }
 
     [Fact]
@@ -132,9 +157,13 @@ public sealed class GrantBuilderTests
         var result = GrantBuilder.Build(application, profile, claims, principal: null, issuer: "https://issuer.example.com", FixedExpiry);
 
         Assert.Null(result.DenyReason);
+
+        // The two template-expanded publish subjects come first (cross-product over household_id),
+        // followed by the auto-added JetStream read-API subjects for the KV buckets this grant reads.
         Assert.Equal(
             ["mise.house.H1.user.alice_example_com.commands", "mise.house.H2.user.alice_example_com.commands"],
-            result.Decision!.Publish);
+            result.Decision!.Publish.Where(static s => !s.StartsWith("$JS.API.", StringComparison.Ordinal)).ToArray());
+        Assert.Contains("$JS.API.STREAM.INFO.KV_callout_assertion_keys", result.Decision!.Publish);
         Assert.Contains("mise.house.H1.user.alice_example_com.events.>", result.Decision!.Subscribe);
         Assert.Contains("mise.house.H2.user.alice_example_com.events.>", result.Decision!.Subscribe);
     }

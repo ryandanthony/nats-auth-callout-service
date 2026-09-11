@@ -147,4 +147,32 @@ public sealed class AppSlugTests
 
         Assert.Equal("notes-app", slug.ToString());
     }
+
+    [Fact]
+    public void JetStreamReadApiPublishSubjects_ScopedToBucketBackingStream()
+    {
+        // A real KV client publishes stream-info + direct-get to the KV_<bucket> backing
+        // stream to read entries; scoped per stream (not $JS.API.>) so a grant reaches only
+        // the buckets it was granted $KV read on (option A minimal set).
+        var subjects = AppSlug.JetStreamReadApiPublishSubjects("callout_apps_notes_assertions");
+
+        Assert.Equal(
+            ["$JS.API.STREAM.INFO.KV_callout_apps_notes_assertions", "$JS.API.DIRECT.GET.KV_callout_apps_notes_assertions"],
+            subjects);
+    }
+
+    [Fact]
+    public void JetStreamReadApiPublishSubjects_NullOrEmpty_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => AppSlug.JetStreamReadApiPublishSubjects(string.Empty));
+        Assert.Throws<ArgumentNullException>(() => AppSlug.JetStreamReadApiPublishSubjects(null!));
+    }
+
+    [Fact]
+    public void ClientInboxSubscribeSubject_IsWildcardInbox()
+    {
+        // NATS.NET assigns each connection an unpredictable _INBOX.<nuid> prefix, so the
+        // wildcard inbox is the minimal grant that lets a KV client receive its request replies.
+        Assert.Equal("_INBOX.>", AppSlug.ClientInboxSubscribeSubject);
+    }
 }

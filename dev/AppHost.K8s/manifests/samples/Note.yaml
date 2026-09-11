@@ -27,10 +27,9 @@ spec:
     - name: editor
       match: { realm_access.roles: [notes-editor] }
       grant:
-        # $JS.API.* and _INBOX.> are what NATS.Net's KV client needs on top of ADR 0013's
-        # $KV.* subjects (GrantBuilder only adds those) - see AppHost.Local's Note.yaml for
-        # the full explanation.
-        publish: [notes.dev.>, "$JS.API.STREAM.INFO.>", "$JS.API.DIRECT.GET.>"]
-        subscribe: [notes.dev.>, "_INBOX.>"]
+        # Only the app's own subjects; the callout auto-adds KV reads + the JetStream wire-level
+        # subjects a real KV client needs (ADR 0013 §JetStream wire-level subjects).
+        publish: [notes.dev.>]
+        subscribe: [notes.dev.>]
       nameClaim: preferred_username
       autoAddSessionAccess: true

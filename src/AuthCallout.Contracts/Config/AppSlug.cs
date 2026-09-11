@@ -215,6 +215,34 @@ public readonly struct AppSlug : IEquatable<AppSlug>
     /// <value>The physical discovery-descriptor read subject.</value>
     public string DiscoveryReadSubject => $"$KV.{DiscoveryBucket}.{DiscoveryDescriptorKey}";
 
+    /// <summary>
+    /// Gets the subscribe subject a client's NATS request-reply inbox needs so a JetStream KV
+    /// client (<c>NatsKVContext</c>) can receive the replies to its stream-info / direct-get
+    /// requests. NATS.NET assigns each connection a random <c>_INBOX.&lt;nuid&gt;</c> prefix the
+    /// callout cannot predict, so the wildcard inbox is the minimal grant that still works;
+    /// added once to any grant that reads at least one KV bucket. Not part of ADR 0013's
+    /// logical <c>$KV.*</c> contract — it is the wire-level plumbing a real KV read requires.
+    /// </summary>
+    /// <value>The client inbox subscribe subject.</value>
+    public static string ClientInboxSubscribeSubject => "_INBOX.>";
+
+    /// <summary>
+    /// The JetStream API subjects a KV client must be able to <b>publish</b> to in order to
+    /// read entries from the bucket whose backing stream is <c>KV_{bucket}</c>: stream-info
+    /// (bucket existence/config) and direct-get (entry read via <c>allow_direct</c>). Scoped to
+    /// the single backing stream, not the account-wide <c>$JS.API.&gt;</c>, so a grant only
+    /// reaches the buckets it was actually granted <c>$KV</c> read on. Companion to
+    /// <see cref="ClientInboxSubscribeSubject"/> (the reply path).
+    /// </summary>
+    /// <param name="bucket">The physical KV bucket name (e.g. <see cref="AssertionsBucket"/>).</param>
+    /// <returns>The JetStream API publish subjects for that bucket's backing stream.</returns>
+    public static IReadOnlyList<string> JetStreamReadApiPublishSubjects(string bucket)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(bucket);
+        var stream = $"KV_{bucket}";
+        return [$"$JS.API.STREAM.INFO.{stream}", $"$JS.API.DIRECT.GET.{stream}"];
+    }
+
     /// <inheritdoc />
     public bool Equals(AppSlug other) => string.Equals(Value, other.Value, StringComparison.Ordinal);
 
