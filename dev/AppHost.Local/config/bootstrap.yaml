@@ -1,0 +1,37 @@
+schemaVersion: 1
+# Dev-only bootstrap file for AppHost.Local (files source + external NATS + Keycloak).
+# Every seed below is a throwaway NKey generated for this dev loop only (never used
+# anywhere else, never rotated into any real deployment) - see dev/README.md for how to
+# regenerate them with `nats auth nkey gen`. No real secrets.
+natsUrl: nats://localhost:4222
+issuerSeed:
+  kind: inline
+  value: SAAM3Y6NLDHLMGVHSSPKDMVTW7KPQ33DFWEMEWWRB76ZVPSRV5UY3L63FA
+serviceUserSeed:
+  kind: inline
+  value: SUADPSPIOAP6ED36NENY4NG2WTS5F5FCWTW6IUM7GONN6PLC5LI65PP62Q
+assertionKeys:
+  - kid: dev-key-a
+    key:
+      kind: inline
+      value: SAAP54W6I7WDKDQIAJYTJFCOGOENX62L4OA3KPFDAUBBT6HYV3E4GN2NSI
+    active: true
+source:
+  kind: files
+  directory: ./config/apps
+  warnStaleness: 60s
+  maxStaleness: 15m
+  reconnectBackoff: 5s
+jwks:
+  refreshInterval: 5m
+  fetchTimeout: 5s
+  prewarmRequired: true
+concurrency:
+  maxDegreeOfParallelism: 16
+  perRequestTimeout: 1500ms
+anonymous:
+  targetAccount: ANON
+  expiry: 5m
+  events:
+    success: anon.auth.success
+    failure: anon.auth.failure
