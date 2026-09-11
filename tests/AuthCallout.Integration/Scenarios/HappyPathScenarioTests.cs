@@ -216,12 +216,15 @@ public sealed class HappyPathScenarioTests(IntegrationEnvironment environment) :
 
     private static async Task AssertPublishDeniedAsync(NatsConnection client, string subject)
     {
-        var violation = await ProbePublishAsync(client, subject).ConfigureAwait(false);
+        // A permissions violation arrives asynchronously on the connection's error channel,
+        // not as a response to PublishAsync, so a single round-trip can race the frame under
+        // CI load. Poll for a bounded window: this returns as soon as the violation is seen.
+        var violation = await ProbePublishAsync(client, subject, deniedProbe: true).ConfigureAwait(false);
         Assert.True(violation, $"Expected publish to '{subject}' to be denied, but no permissions/authorization violation was reported.");
     }
 
     /// <summary>Publishes a probe message and reports whether the server raised a permissions/authorization violation for it.</summary>
-    private static async Task<bool> ProbePublishAsync(NatsConnection client, string subject)
+    private static async Task<bool> ProbePublishAsync(NatsConnection client, string subject, bool deniedProbe = false)
     {
         var violation = false;
         ValueTask OnError(object? sender, NatsServerErrorEventArgs args)
@@ -239,6 +242,18 @@ public sealed class HappyPathScenarioTests(IntegrationEnvironment environment) :
         {
             await client.PublishAsync(subject, Encoding.UTF8.GetBytes("probe")).ConfigureAwait(false);
             await client.PingAsync().ConfigureAwait(false); // round-trip so an async permission-violation frame has arrived before we check.
+
+            // For a denial probe, the violation frame can lag the ping under load; poll a short
+            // bounded window (returning immediately once seen) rather than sampling exactly once.
+            // The allowed probe returns straight away — one clean round-trip is conclusive.
+            if (deniedProbe)
+            {
+                for (var attempt = 0; attempt < 20 && !violation; attempt++)
+                {
+                    await Task.Delay(100).ConfigureAwait(false);
+                    await client.PingAsync().ConfigureAwait(false);
+                }
+            }
         }
         finally
         {
