@@ -28,7 +28,6 @@
 
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.AppHost" />
-    <PackageReference Include="Aspire.Hosting.Nats" />
     <PackageReference Include="Aspire.Hosting.Keycloak" />
     <PackageReference Include="CommunityToolkit.Aspire.Hosting.K3s" />
   </ItemGroup>

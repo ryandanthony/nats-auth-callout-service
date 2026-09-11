@@ -18,7 +18,16 @@ assertionKeys:
     active: true
 source:
   kind: files
-  directory: ./config/apps
+  # Relative to AuthCallout.Host's own project directory (src/AuthCallout.Host), NOT
+  # AppHost.Local's: dotnet run's default content root/working directory for a project
+  # resource is that project's own folder, so a naive "./config/apps" here resolves
+  # against the wrong base and the files source never sees Note.yaml/Task.yaml (found the
+  # hard way validating this loop end to end: the callout stayed stuck in "Starting"
+  # forever with config-source.lastSuccessfulSync == "never", because
+  # WaitForValidConfigAsync never saw a first decision and NATS connect never even
+  # started). Portable across checkouts (no absolute path) precisely because it's anchored
+  # to that fixed relationship between the two directories, not to any one machine's path.
+  directory: ../../dev/AppHost.Local/config/apps
   warnStaleness: 60s
   maxStaleness: 15m
   reconnectBackoff: 5s

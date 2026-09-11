@@ -43,13 +43,17 @@ var apps = cluster.AddK8sManifest("apps", "./manifests/samples")
     .WaitForCompletion(crd)
     .WaitForCompletion(namespaces);
 
-// NATS with JetStream. Pinned to host port 4223 (AppHost.Local uses 4222) so both dev
-// loops can run side by side without a port clash. AuthCallout.Host resolves the NATS URL
-// once from the static bootstrap file below rather than an Aspire-injected env var (doc 09
-// §Bootstrap file), so the port has to be fixed at a known value the bootstrap file can
-// name, the same reasoning as AppHost.Local's own external NATS endpoint.
-var nats = builder.AddNats("nats")
-    .WithJetStream()
+// NATS with JetStream, auth-callout-enabled (nats/server.conf - see AppHost.Local's copy of
+// this file for why a plain AddContainer replaces Aspire's AddNats helper here: its built-in
+// --user/--pass args conflict with the `accounts {}` block auth_callout's `account:` field
+// requires). Pinned to host port 4223 (AppHost.Local uses 4222) so both dev loops can run
+// side by side without a port clash. AuthCallout.Host resolves the NATS URL once from the
+// static bootstrap file below rather than an Aspire-injected env var (doc 09 §Bootstrap
+// file), so the port has to be fixed at a known value the bootstrap file can name, the same
+// reasoning as AppHost.Local's own external NATS endpoint.
+var nats = builder.AddContainer("nats", "nats", "2.14")
+    .WithBindMount("./nats/server.conf", "/server.conf", isReadOnly: true)
+    .WithArgs("-js", "-c", "/server.conf")
     .WithEndpoint("tcp", e =>
     {
         e.Port = 4223;
@@ -67,7 +71,6 @@ var keycloak = builder.AddKeycloak("idp", 8082)
     .WithRealmImport("../AppHost.Local/realm");
 
 var callout = builder.AddProject<Projects.AuthCallout_Host>("callout")
-    .WithReference(nats)
     .WaitFor(nats)
     .WithReference(cluster)
     .WaitForCompletion(rbac)
@@ -76,13 +79,17 @@ var callout = builder.AddProject<Projects.AuthCallout_Host>("callout")
     .WaitFor(keycloak)
     .WithEnvironment("AUTHCALLOUT_BOOTSTRAP_PATH", Path.Combine(builder.AppHostDirectory, "config", "bootstrap.yaml"));
 
+// NATS_URI: the container-network URL for the samples (DevEnvironment.ReadNatsUrl, dev/
+// samples/Shared). nats isn't IResourceWithConnectionString (a plain AddContainer, see
+// above), so WithReference(nats) wouldn't inject anything useful here - this builds the
+// same nats://host:port shape by hand from its tcp endpoint, same as AppHost.Local.
 builder.AddProject<Projects.NoteService>("note")
-    .WithReference(nats)
+    .WithEnvironment("NATS_URI", ReferenceExpression.Create($"nats://{nats.GetEndpoint("tcp").Property(EndpointProperty.HostAndPort)}"))
     .WithReference(keycloak)
     .WaitFor(callout);
 
 builder.AddProject<Projects.TaskService>("task")
-    .WithReference(nats)
+    .WithEnvironment("NATS_URI", ReferenceExpression.Create($"nats://{nats.GetEndpoint("tcp").Property(EndpointProperty.HostAndPort)}"))
     .WithReference(keycloak)
     .WaitFor(callout);
 

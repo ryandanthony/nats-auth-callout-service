@@ -10,11 +10,15 @@
 
 var builder = DistributedApplication.CreateBuilder(args);
 
-// NATS with JetStream, published to a host port so the `nats` CLI or scratch clients can
-// also connect directly (doc 08: "connect to it externally and run locally" case).
-var nats = builder.AddNats("nats")
-    .WithJetStream()
-    .WithDataVolume()
+// NATS with JetStream, auth-callout-enabled (nats/server.conf - see that file's own comment
+// for why this can't use Aspire's AddNats helper: it always injects a global --user/--pass,
+// which nats-server rejects once an `accounts {}` block exists, and auth_callout's own
+// `account:` field requires exactly that). Published to a host port so the `nats` CLI or
+// scratch clients can also connect directly (doc 08: "connect to it externally and run
+// locally" case).
+var nats = builder.AddContainer("nats", "nats", "2.14")
+    .WithBindMount("./nats/server.conf", "/server.conf", isReadOnly: true)
+    .WithArgs("-js", "-c", "/server.conf")
     .WithEndpoint("tcp", e =>
     {
         e.Port = 4222;
@@ -35,19 +39,22 @@ var keycloak = builder.AddKeycloak("idp", 8081)
     .WithRealmImport("./realm");
 
 var callout = builder.AddProject<Projects.AuthCallout_Host>("callout")
-    .WithReference(nats)
     .WaitFor(nats)
     .WithReference(keycloak)
     .WaitFor(keycloak)
     .WithEnvironment("AUTHCALLOUT_BOOTSTRAP_PATH", Path.Combine(builder.AppHostDirectory, "config", "bootstrap.yaml"));
 
+// NATS_URI: the container-network URL for dependent resources (DevEnvironment.ReadNatsUrl,
+// dev/samples/Shared). nats isn't IResourceWithConnectionString (a plain AddContainer, see
+// above), so WithReference(nats) wouldn't inject anything useful here - this builds the same
+// nats://host:port shape by hand from its tcp endpoint.
 builder.AddProject<Projects.NoteService>("note")
-    .WithReference(nats)
+    .WithEnvironment("NATS_URI", ReferenceExpression.Create($"nats://{nats.GetEndpoint("tcp").Property(EndpointProperty.HostAndPort)}"))
     .WithReference(keycloak)
     .WaitFor(callout);
 
 builder.AddProject<Projects.TaskService>("task")
-    .WithReference(nats)
+    .WithEnvironment("NATS_URI", ReferenceExpression.Create($"nats://{nats.GetEndpoint("tcp").Property(EndpointProperty.HostAndPort)}"))
     .WithReference(keycloak)
     .WaitFor(callout);
 
