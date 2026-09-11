@@ -1,10 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Project shell; P14 fills it. Testcontainers-based end-to-end suite:
-       nats:2.11 -js, Keycloak, k3s, Postgres. -->
+  <!-- P14: the real-dependencies proof (implementation-plan/14-integration-suite.md). Testcontainers-based
+       end-to-end suite: nats:2.11 -js, Keycloak, k3s, Postgres. -->
 
   <PropertyGroup>
     <IsPackable>false</IsPackable>
+    <!-- xUnit test naming convention (MethodUnderTest_Scenario_ExpectedResult) is intentionally
+         underscored for readability; CA1707 flags this repo-wide but it is the accepted xUnit
+         style, scoped to this test-only project (matches AuthCallout.*.Tests). -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,6 +29,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AuthCallout.Host\AuthCallout.Host.csproj" />
+    <ProjectReference Include="..\..\src\AuthCallout.Config.Files\AuthCallout.Config.Files.csproj" />
   </ItemGroup>
 
 </Project>
