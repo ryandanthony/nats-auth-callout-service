@@ -22,7 +22,9 @@ profiles:
     match:
       realm_access.roles: [tasks-worker]
     grant:
-      publish: [tasks.dev.>]
-      subscribe: [tasks.dev.>]
+      # See Note.yaml's identical comment: $JS.API.* and _INBOX.> are what NATS.Net's KV
+      # client itself needs on top of ADR 0013's $KV.* subjects, not part of that contract.
+      publish: [tasks.dev.>, "$JS.API.STREAM.INFO.>", "$JS.API.DIRECT.GET.>"]
+      subscribe: [tasks.dev.>, "_INBOX.>"]
     nameClaim: preferred_username
     autoAddSessionAccess: true
