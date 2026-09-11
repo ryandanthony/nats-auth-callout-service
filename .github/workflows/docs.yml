@@ -1,0 +1,80 @@
+name: Documentation
+
+# Mirrors ryandanthony/dottie's docs.yml pattern (QUESTIONS A4, P18): Docusaurus build +
+# GitHub Pages deploy, scoped to changes under docs-site/** or the design docs/schemas the
+# reference pages must stay in sync with (drift check below).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs-site/**'
+      - 'schemas/config/**'
+      - 'docs/design/**'
+      - 'docs/architecture-decision-log/**'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs-site/**'
+      - 'schemas/config/**'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python (schema <-> reference drift check)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check config reference stays in sync with schemas/config/*.json
+        run: python3 docs-site/scripts/check-config-reference-drift.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: docs-site/website/package-lock.json
+
+      - name: Install dependencies
+        working-directory: docs-site/website
+        run: npm ci
+
+      # onBrokenLinks/onBrokenAnchors/onBrokenMarkdownLinks are all set to 'throw' in
+      # docusaurus.config.ts, so this build is the equivalent strictness of `mkdocs build
+      # --strict`: any broken internal link or anchor fails the job.
+      - name: Build
+        working-directory: docs-site/website
+        run: npm run build
+
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs-site/website/build
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
