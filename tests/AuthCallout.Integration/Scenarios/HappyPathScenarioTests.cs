@@ -128,21 +128,29 @@ public sealed class HappyPathScenarioTests(IntegrationEnvironment environment) :
         var assertionEntry = await assertionsStore.GetEntryAsync<string>(jti);
         var assertion = assertionEntry.Value!;
 
+        // A second notes-app connection (the same editor profile carries autoAddSessionAccess
+        // for the notes token bucket, doc 07) subscribes *before* the publish, so the message
+        // is guaranteed to be in flight when it is sent (NATS core pub/sub has no message
+        // replay - a subscription that starts after the publish would simply miss it).
+        // SubscribeAsync's IAsyncEnumerable is deferred (the SUB frame is not actually sent
+        // until the first MoveNextAsync), so the wait must start before the delay/publish,
+        // not merely be scheduled before them.
+        var subscriberToken = await environment.Keycloak.GetPasswordGrantTokenAsync(
+            IntegrationRealm.NotesClientId, IntegrationRealm.NoteUsername, IntegrationRealm.NotePassword);
+        await using var subscriberClient = await ConnectWithTokenAsync(subscriberToken);
+        var enumerator = subscriberClient.SubscribeAsync<byte[]>("notes.dev.identity-relay").GetAsyncEnumerator();
+        var receiveTask = enumerator.MoveNextAsync().AsTask();
+
+        // Give the subscription a moment to actually register with the server before publishing.
+        await Task.Delay(200);
+
         // Publisher publishes with the Callout-Identity header.
         var headers = new NatsHeaders { ["Callout-Identity"] = assertion };
         await publisherClient.PublishAsync("notes.dev.identity-relay", Encoding.UTF8.GetBytes("hello"), headers: headers);
 
-        // A second notes-app connection (the same editor profile carries autoAddSessionAccess
-        // for the notes token bucket, doc 07) subscribes, verifies the assertion via the
-        // unconditional keys-bucket read every authenticated grant carries, and reads the
-        // OIDC token by the assertion's id.
-        var subscriberToken = await environment.Keycloak.GetPasswordGrantTokenAsync(
-            IntegrationRealm.NotesClientId, IntegrationRealm.NoteUsername, IntegrationRealm.NotePassword);
-        await using var subscriberClient = await ConnectWithTokenAsync(subscriberToken);
-
-        var sub = subscriberClient.SubscribeAsync<byte[]>("notes.dev.identity-relay");
-        var enumerator = sub.GetAsyncEnumerator();
-        Assert.True(await enumerator.MoveNextAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5)));
+        // Subscriber verifies the assertion via the unconditional keys-bucket read every
+        // authenticated grant carries, and reads the OIDC token by the assertion's id.
+        Assert.True(await receiveTask.WaitAsync(TimeSpan.FromSeconds(5)));
         var received = enumerator.Current;
 
         var receivedAssertion = received.Headers?["Callout-Identity"].ToString();

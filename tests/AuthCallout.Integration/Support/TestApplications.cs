@@ -37,6 +37,26 @@ public static class TestApplications
     public const string TasksServiceProfileName = "worker-service";
 #pragma warning restore S2339
 
+#pragma warning disable S2339 // Kept const (matching the repo's existing named-constant pattern); these are wire-protocol subject literals, not mutable state.
+    /// <summary>
+    /// The <c>$JS.API.STREAM.INFO.&gt;</c>/<c>$JS.API.DIRECT.GET.&gt;</c> publish subjects and
+    /// <c>_INBOX.&gt;</c> subscribe subject NATS.Net's own KV client needs under the hood
+    /// (<c>NatsKVContext.GetStoreAsync</c>/<c>GetEntryAsync</c>) on top of the
+    /// <c>$KV.&lt;bucket&gt;.&lt;key&gt;</c> subjects ADR 0013/<c>GrantBuilder</c> already grant —
+    /// not part of the KV grant contract itself, just what the wire protocol requires to look
+    /// up a bucket's backing stream and receive the reply (found validating this suite against
+    /// a real server; matches P15's own <c>dev/AppHost.Local/config/apps/Note.yaml</c> fix).
+    /// </summary>
+    private static readonly IReadOnlyList<string> KvClientPublishSubjects = ["$JS.API.STREAM.INFO.>", "$JS.API.DIRECT.GET.>"];
+
+    private static readonly IReadOnlyList<string> KvClientSubscribeSubjects = ["_INBOX.>"];
+#pragma warning restore S2339
+
+    /// <summary>Builds a <see cref="Grant"/> for a real subject list plus the standing <see cref="KvClientPublishSubjects"/>/<see cref="KvClientSubscribeSubjects"/> every profile needs.</summary>
+    private static Grant GrantWithKvClientSubjects(IReadOnlyList<string> publish, IReadOnlyList<string> subscribe) => new(
+        Publish: [.. publish, .. KvClientPublishSubjects],
+        Subscribe: [.. subscribe, .. KvClientSubscribeSubjects]);
+
     /// <summary>Builds the <c>notes</c> application: editor profile granted <c>notes.dev.&gt;</c>, identity propagation enabled, <c>autoAddSessionAccess</c> on the editor profile.</summary>
     /// <param name="issuerAuthority">The Keycloak realm issuer authority (<see cref="Fixtures.KeycloakFixture.IssuerAuthority"/>).</param>
     /// <returns>The <c>notes</c> application config.</returns>
@@ -57,7 +77,7 @@ public static class TestApplications
                 {
                     ["realm_access.roles"] = ["notes-editor"],
                 }),
-                Grant: new Grant(Publish: ["notes.dev.>"], Subscribe: ["notes.dev.>"]),
+                Grant: GrantWithKvClientSubjects(["notes.dev.>"], ["notes.dev.>"]),
                 NameClaim: "preferred_username",
                 Variables: [],
                 PublishTemplates: [],
@@ -87,7 +107,7 @@ public static class TestApplications
                 {
                     ["realm_access.roles"] = ["tasks-worker"],
                 }),
-                Grant: new Grant(Publish: ["tasks.dev.>"], Subscribe: ["tasks.dev.>"]),
+                Grant: GrantWithKvClientSubjects(["tasks.dev.>"], ["tasks.dev.>"]),
                 NameClaim: "preferred_username",
                 Variables: [],
                 PublishTemplates: [],
@@ -99,7 +119,7 @@ public static class TestApplications
                 {
                     ["azp"] = [IntegrationRealm.ServiceClientId],
                 }),
-                Grant: new Grant(Publish: ["tasks.svc.>"], Subscribe: ["tasks.dev.>", "tasks.svc.>"]),
+                Grant: GrantWithKvClientSubjects(["tasks.svc.>"], ["tasks.dev.>", "tasks.svc.>"]),
                 NameClaim: "azp",
                 Variables: [],
                 PublishTemplates: [],

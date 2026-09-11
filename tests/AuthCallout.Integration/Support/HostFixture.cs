@@ -103,12 +103,13 @@ public sealed class HostFixture : IAsyncDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(keycloakCertificatePem);
         ArgumentNullException.ThrowIfNull(applications);
 
-        var bootstrap = BuildBootstrap(anonymous);
+        var assertionKey = GeneratedNKeyPair.Create(PrefixByte.Account);
+        var bootstrap = BuildBootstrap(anonymous, assertionKey);
         var activeConfigSource = new StaticActiveConfigSource(new ActiveConfig(bootstrap, new RoutingConfig(applications), Version: 1));
 
         var pipeline = await BuildPipelineAsync(nats, keycloakCertificatePem, bootstrap, activeConfigSource, cancellationToken).ConfigureAwait(false);
         var connection = await ConnectAsync(nats, cancellationToken).ConfigureAwait(false);
-        var identity = await BuildIdentityStoreAsync(connection, activeConfigSource, cancellationToken).ConfigureAwait(false);
+        var identity = await BuildIdentityStoreAsync(connection, activeConfigSource, assertionKey, cancellationToken).ConfigureAwait(false);
 
         var eventEmitter = new EventEmitter(connection, activeConfigSource);
         var responderDependencies = new CalloutResponderDependencies(
@@ -174,9 +175,8 @@ public sealed class HostFixture : IAsyncDisposable
     }
 
     private static async Task<IdentityParts> BuildIdentityStoreAsync(
-        NatsConnection connection, StaticActiveConfigSource activeConfigSource, CancellationToken cancellationToken)
+        NatsConnection connection, StaticActiveConfigSource activeConfigSource, GeneratedNKeyPair assertionKey, CancellationToken cancellationToken)
     {
-        var assertionKey = GeneratedNKeyPair.Create(PrefixByte.Account);
         var assertionSigner = new AssertionSigner([new ResolvedAssertionKey("kid-1", assertionKey.Seed, Active: true)]);
         INatsKVContext kvContext = connection.CreateKeyValueStoreContext();
         var writer = new KvIdentityStoreWriter(kvContext, assertionSigner, new InlineSecretResolver(assertionKey.Seed));
@@ -188,12 +188,12 @@ public sealed class HostFixture : IAsyncDisposable
     }
 #pragma warning restore CA2000, CA1506
 
-    private static BootstrapConfig BuildBootstrap(AnonymousGlobalConfig? anonymous) => new(
+    private static BootstrapConfig BuildBootstrap(AnonymousGlobalConfig? anonymous, GeneratedNKeyPair assertionKey) => new(
         NatsUrl: "nats://unused-direct-connection-owns-transport",
         IssuerSeed: SecretRef.Inline("unused-direct-seed-owns-signing"),
         ServiceUserSeed: null,
         XkeySeed: null,
-        AssertionKeys: null,
+        AssertionKeys: [new AssertionKey("kid-1", SecretRef.Inline(assertionKey.Seed), Active: true)],
         Source: SourceConfig.Files(new FilesSourceSettings("/unused"), DurationString.Parse("60s"), DurationString.Parse("15m"), DurationString.Parse("5s")),
         Jwks: new JwksSettings(DurationString.Parse("5m"), DurationString.Parse("5s"), PrewarmRequired: true),
         Concurrency: new ConcurrencySettings(MaxDegreeOfParallelism: 16, PerRequestTimeout: DurationString.Parse("2s"), QueueCapacity: null),
