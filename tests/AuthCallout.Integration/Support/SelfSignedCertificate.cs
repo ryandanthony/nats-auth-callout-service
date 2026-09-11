@@ -17,9 +17,9 @@ namespace AuthCallout.Integration.Support;
 /// "Keycloak must be served over HTTPS" note — so this suite serves Keycloak over real TLS
 /// rather than relaxing that requirement. The certificate is marked as its own CA
 /// (<c>basicConstraints: CA:true</c>) purely so it can double as the trust anchor: the test
-/// process trusts it via the <c>SSL_CERT_FILE</c> environment variable (OpenSSL's env-var
-/// override, which .NET's Linux TLS stack honors), not via the OS certificate store, keeping
-/// the whole thing self-contained and CI-safe (no <c>sudo</c>/system store mutation). Returns
+/// process trusts it via <c>KeycloakFixture.TrustRootCertificate</c> (adds it to the
+/// current user's X509 Root store), not the machine-wide OS certificate store, keeping the
+/// whole thing self-contained and CI-safe (no <c>sudo</c>/system store mutation). Returns
 /// only the PEM text (never the live <see cref="X509Certificate2"/>/<see cref="RSA"/>
 /// handles) — callers only ever need the exported bytes to write into a resource mapping or
 /// a trust-anchor file, so there is nothing left to dispose once generation returns.

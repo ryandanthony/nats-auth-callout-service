@@ -68,6 +68,7 @@ public static class NatsServerConfigBuilder
 
         sb.AppendLine("accounts {");
         sb.AppendLine(Inv($"  {AuthAccountName}: {{"));
+        sb.AppendLine("    jetstream: enabled");
         sb.AppendLine(Inv($"    users: [ {{ nkey: {serviceUserPublicKey} }} ]"));
         sb.AppendLine("  }");
         sb.AppendLine(Inv($"  {NotesAccountName}: {{ jetstream: enabled }}"));

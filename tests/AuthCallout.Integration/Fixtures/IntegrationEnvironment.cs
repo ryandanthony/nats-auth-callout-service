@@ -29,7 +29,6 @@ public sealed class IntegrationEnvironment : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await Task.WhenAll(Nats.InitializeAsync(), Keycloak.InitializeAsync()).ConfigureAwait(false);
-        Keycloak.TrustRootCertificate();
     }
 
     /// <inheritdoc />

@@ -184,7 +184,10 @@ public static class IntegrationRealm
           "username": "{{username}}",
           "enabled": true,
           "emailVerified": true,
+          "firstName": "Integration",
+          "lastName": "Test",
           "email": "{{username}}@example.com",
+          "requiredActions": [],
           "credentials": [ { "type": "password", "value": "{{password}}", "temporary": false } ],
           "realmRoles": [ {{roles}} ]
         }
