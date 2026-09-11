@@ -1,0 +1,3 @@
+# Python cache from scripts/check-config-reference-drift.py
+scripts/__pycache__/
+scripts/*.pyc
