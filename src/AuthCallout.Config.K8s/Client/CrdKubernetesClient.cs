@@ -161,12 +161,17 @@ public sealed class CrdKubernetesClient : ICrdKubernetesClient, IDisposable
     /// <summary>
     /// Resolves cluster config the way doc 08 specifies: in-cluster when running as a pod,
     /// falling back to the local kubeconfig for Aspire/dev (doc 08 §Kubernetes CRD source).
+    /// Out-of-cluster uses <see cref="KubernetesClientConfiguration.BuildDefaultConfig"/>, which
+    /// honors the <c>KUBECONFIG</c> environment variable before falling back to <c>~/.kube/config</c>;
+    /// the argumentless <c>BuildConfigFromConfigFile()</c> silently ignores <c>KUBECONFIG</c> and
+    /// always reads the default path, which breaks any dev/CI run pointing KUBECONFIG at a
+    /// non-default cluster (e.g. the Aspire K3s AppHost).
     /// </summary>
     /// <returns>The resolved client configuration.</returns>
     private static KubernetesClientConfiguration ResolveConfig() =>
         KubernetesClientConfiguration.IsInCluster()
             ? KubernetesClientConfiguration.InClusterConfig()
-            : KubernetesClientConfiguration.BuildConfigFromConfigFile();
+            : KubernetesClientConfiguration.BuildDefaultConfig();
 
     private static CrdChangeKind ToChangeKind(WatchEventType eventType) => eventType switch
     {
