@@ -27,6 +27,11 @@ await using var client = new NatsClient(new NatsOpts
 {
     Url = natsUrl,
     AuthOpts = new NatsAuthOpts { Token = token },
+
+    // The callout grants a scoped reply inbox (_INBOX.{app-slug}.{principal}.>),
+    // not the account-wide _INBOX.>; the connection must use the matching
+    // prefix or KV reads/request-replies silently time out.
+    InboxPrefix = CalloutInboxPrefix.For("notes", token),
 });
 await client.ConnectAsync();
 ```
