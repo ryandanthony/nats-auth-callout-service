@@ -1,0 +1,99 @@
+{{/*
+Bootstrap file (doc 09 §Bootstrap file, doc 04 §Two layers) as a ConfigMap, mounted at
+/config/bootstrap.yaml (AuthCallout.Host's BootstrapConfigLoader default path). Every
+secret-shaped field below is a `k8sSecret` SecretRef pointing at the mounted-volume path
+`/var/run/secrets/{name}/{key}` per src/AuthCallout.Secrets/README.md's mount contract —
+this ConfigMap carries no secret material itself, only k8sSecret *references*.
+*/}}
+{{- $fullname := include "nats-auth-callout-service.fullname" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-bootstrap
+  labels:
+    {{- include "nats-auth-callout-service.labels" . | nindent 4 }}
+data:
+  bootstrap.yaml: |
+    schemaVersion: 1
+    natsUrl: {{ .Values.natsUrl | quote }}
+    issuerSeed:
+      kind: k8sSecret
+      name: {{ required "secrets.issuerSeed.existingSecret is required" .Values.secrets.issuerSeed.existingSecret | quote }}
+      key: {{ .Values.secrets.issuerSeed.key | quote }}
+    {{- if .Values.secrets.serviceUserSeed.enabled }}
+    serviceUserSeed:
+      kind: k8sSecret
+      name: {{ required "secrets.serviceUserSeed.existingSecret is required when secrets.serviceUserSeed.enabled" .Values.secrets.serviceUserSeed.existingSecret | quote }}
+      key: {{ .Values.secrets.serviceUserSeed.key | quote }}
+    {{- end }}
+    {{- if .Values.secrets.xkey.enabled }}
+    xkeySeed:
+      kind: k8sSecret
+      name: {{ required "secrets.xkey.existingSecret is required when secrets.xkey.enabled" .Values.secrets.xkey.existingSecret | quote }}
+      key: {{ .Values.secrets.xkey.key | quote }}
+    {{- end }}
+    {{- if .Values.secrets.assertionKeys }}
+    assertionKeys:
+      {{- range .Values.secrets.assertionKeys }}
+      - kid: {{ .kid | quote }}
+        key:
+          kind: k8sSecret
+          name: {{ required "assertionKeys[].existingSecret is required" .existingSecret | quote }}
+          key: {{ .key | quote }}
+        active: {{ .active }}
+      {{- end }}
+    {{- end }}
+    source:
+      kind: {{ .Values.source.kind | quote }}
+      {{- if eq .Values.source.kind "files" }}
+      directory: {{ .Values.source.files.directory | quote }}
+      {{- else if eq .Values.source.kind "k8s" }}
+      labelSelector: {{ .Values.source.k8s.labelSelector | quote }}
+      {{- else if eq .Values.source.kind "postgres" }}
+      connectionString:
+        kind: k8sSecret
+        name: {{ required "source.postgres.connectionString.existingSecret is required when source.kind=postgres" .Values.source.postgres.connectionString.existingSecret | quote }}
+        key: {{ .Values.source.postgres.connectionString.key | quote }}
+      pollInterval: {{ .Values.source.postgres.pollInterval | quote }}
+      notifyChannel: {{ .Values.source.postgres.notifyChannel | quote }}
+      {{- end }}
+      warnStaleness: {{ .Values.bootstrap.warnStaleness | quote }}
+      maxStaleness: {{ .Values.bootstrap.maxStaleness | quote }}
+      reconnectBackoff: {{ .Values.bootstrap.reconnectBackoff | quote }}
+    jwks:
+      refreshInterval: {{ .Values.bootstrap.jwks.refreshInterval | quote }}
+      fetchTimeout: {{ .Values.bootstrap.jwks.fetchTimeout | quote }}
+      prewarmRequired: {{ .Values.bootstrap.jwks.prewarmRequired }}
+    concurrency:
+      maxDegreeOfParallelism: {{ .Values.bootstrap.concurrency.maxDegreeOfParallelism }}
+      perRequestTimeout: {{ .Values.bootstrap.concurrency.perRequestTimeout | quote }}
+      {{- if not (empty .Values.bootstrap.concurrency.queueCapacity) }}
+      queueCapacity: {{ .Values.bootstrap.concurrency.queueCapacity }}
+      {{- end }}
+    anonymous:
+      targetAccount: {{ .Values.bootstrap.anonymous.targetAccount | quote }}
+      expiry: {{ .Values.bootstrap.anonymous.expiry | quote }}
+      {{- if .Values.bootstrap.anonymous.events }}
+      events:
+        {{- if .Values.bootstrap.anonymous.events.success }}
+        success: {{ .Values.bootstrap.anonymous.events.success | quote }}
+        {{- end }}
+        {{- if .Values.bootstrap.anonymous.events.failure }}
+        failure: {{ .Values.bootstrap.anonymous.events.failure | quote }}
+        {{- end }}
+      {{- end }}
+{{- if and (eq .Values.source.kind "files") .Values.source.files.configMap.create }}
+---
+{{/* Per-app routing files (doc 09 §Config files) mounted at source.files.directory. */}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-apps
+  labels:
+    {{- include "nats-auth-callout-service.labels" . | nindent 4 }}
+data:
+  {{- range $filename, $content := .Values.source.files.configMap.files }}
+  {{ $filename }}: |
+    {{- $content | nindent 4 }}
+  {{- end }}
+{{- end }}

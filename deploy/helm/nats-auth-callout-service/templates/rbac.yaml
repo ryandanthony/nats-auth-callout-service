@@ -1,0 +1,36 @@
+{{/*
+Cluster-wide read + status-write RBAC for the AuthApplication CRD (deploy/crd/rbac.yaml,
+P11), only rendered when source.kind=k8s and source.k8s.rbac.create is true. Mirrors the
+static manifest in deploy/crd/rbac.yaml exactly (verbs/resources), retargeted at this
+release's ServiceAccount + namespace instead of the static "default" namespace.
+*/}}
+{{- if and (eq .Values.source.kind "k8s") .Values.source.k8s.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "nats-auth-callout-service.fullname" . }}-crd-reader
+  labels:
+    {{- include "nats-auth-callout-service.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["authcallout.ants.zone"]
+    resources: ["authapplications"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["authcallout.ants.zone"]
+    resources: ["authapplications/status"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "nats-auth-callout-service.fullname" . }}-crd-reader
+  labels:
+    {{- include "nats-auth-callout-service.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "nats-auth-callout-service.fullname" . }}-crd-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "nats-auth-callout-service.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end -}}

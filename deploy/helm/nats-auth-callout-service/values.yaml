@@ -1,0 +1,188 @@
+# Default values for nats-auth-callout-service.
+# See README.md for the full values reference and per-source-kind examples.
+
+image:
+  repository: ghcr.io/ryandanthony/nats-auth-callout-service
+  # Defaults to .Chart.AppVersion when empty.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# doc 08 §Multiple instances: run >1 instance behind the queue-group subscription for HA.
+replicaCount: 2
+
+podAnnotations: {}
+podLabels: {}
+
+serviceAccount:
+  # Always created; RBAC (ClusterRole/Binding) is only attached when source.kind=k8s
+  # and source.k8s.rbac.create is true (see rbac.yaml).
+  create: true
+  name: ""
+  annotations: {}
+
+# Pod-level security context (doc 08: non-root, read-only rootfs).
+podSecurityContext:
+  runAsNonRoot: true
+  fsGroup: 1654
+
+# Container-level security context. The image's non-root numeric UID ($APP_UID in the
+# Dockerfile) is baked in; runAsUser is left unset here so the image's own USER directive
+# wins unless explicitly overridden.
+securityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+# The pinned health port (D21). Only override for exotic port-conflict scenarios; the
+# probe paths /healthz /readyz /startupz are not configurable (pinned in the app itself).
+health:
+  port: 8080
+
+# A ClusterIP Service in front of the health port. NATS traffic never flows through this
+# Service (the callout subscribes directly to the NATS server via natsUrl); it exists for
+# ServiceMonitor / manual probe access / port-forwarding convenience.
+service:
+  enabled: true
+  type: ClusterIP
+  port: 8080
+
+# OTel env (D22). Left empty by default: OTEL_SERVICE_NAME then falls back to the app's own
+# default ("nats-auth-callout-service") and no OTLP exporter endpoint is set (the OTel SDK
+# no-ops without one). Set otlpEndpoint to enable export.
+otel:
+  serviceName: ""
+  otlpEndpoint: ""
+
+# NATS server URL (bootstrap layer, doc 04 §Two layers). Not a secret.
+natsUrl: "nats://nats:4222"
+
+bootstrap:
+  jwks:
+    refreshInterval: 5m
+    fetchTimeout: 5s
+    prewarmRequired: true
+  concurrency:
+    maxDegreeOfParallelism: 64
+    perRequestTimeout: 1500ms
+    # Optional; omit (null) to leave unset.
+    queueCapacity: null
+  anonymous:
+    targetAccount: ANON
+    expiry: 5m
+    # events: { success: "...", failure: "..." }
+    events: {}
+  # Config-source watch health thresholds (ADR 0017), duration strings.
+  warnStaleness: 60s
+  maxStaleness: 300s
+  reconnectBackoff: 5s
+
+# -----------------------------------------------------------------------------------------
+# Secrets (P03 k8sSecret mount contract). The chart NEVER generates key material: every
+# entry below references an *existingSecret* the operator provisions out-of-band (see
+# README "Secret provisioning" / ADR 0014 rotation flow). For each distinct existingSecret
+# name referenced anywhere below, the chart adds one Secret-typed volume mounted at
+# /var/run/secrets/{name}, so AuthCallout.Secrets's SecretResolver (k8sSecret kind) finds
+# /var/run/secrets/{name}/{key} with no RBAC or KubernetesClient dependency required.
+# -----------------------------------------------------------------------------------------
+secrets:
+  # Required: the issuer signing seed (mints/signs every user JWT + callout reply).
+  issuerSeed:
+    existingSecret: ""
+    key: seed
+  # Optional: the dedicated auth-service-user seed (auth_users exemption). When disabled,
+  # serviceUserSeed is omitted from bootstrap.yaml (null is a valid bootstrap value).
+  serviceUserSeed:
+    enabled: false
+    existingSecret: ""
+    key: seed
+  # Optional: xkey seed for encrypted $SYS.REQ.USER.AUTH (ADR 0018).
+  xkey:
+    enabled: false
+    existingSecret: ""
+    key: seed
+  # Assertion keyset (ADR 0011/0014): signs identity assertions. Exactly one entry should
+  # have active: true; the rest are verify-only (rotation). Empty by default — identity
+  # propagation assertion signing is opt-in via this list.
+  assertionKeys: []
+  # Example:
+  # assertionKeys:
+  #   - kid: "2026-09-06a"
+  #     existingSecret: authcallout-assertion-a
+  #     key: seed
+  #     active: true
+
+# -----------------------------------------------------------------------------------------
+# Routing config source (doc 04 §Sources, ADR 0005). Exactly one of files|k8s|postgres.
+# -----------------------------------------------------------------------------------------
+source:
+  kind: files
+
+  files:
+    # Mount path inside the container; must match bootstrap.source.directory.
+    directory: /config/apps
+    configMap:
+      # When true, the chart renders a ConfigMap from `files` below and mounts it.
+      # When false, set existingConfigMap to an operator-managed ConfigMap name instead.
+      create: true
+      existingConfigMap: ""
+      # filename -> file content (JSON or YAML, doc 09 §Config files).
+      files: {}
+
+  k8s:
+    # Owner-label selector value: only AuthApplication CRs matching this selector are
+    # claimed by this release (ADR 0005 cluster-wide watch + ownership filtering).
+    labelSelector: "app.kubernetes.io/managed-by=nats-auth-callout"
+    crds:
+      # Installs the AuthApplication CRD (deploy/crd/authapplication-crd.yaml, P11).
+      # Gated here (rather than Helm's native crds/ directory, which cannot be
+      # conditional) so a chart consumer who already manages the CRD separately
+      # (e.g. shared across releases/namespaces) can opt out. See README.
+      install: true
+    rbac:
+      # Installs the ServiceAccount + ClusterRole/ClusterRoleBinding from
+      # deploy/crd/rbac.yaml (P11), scoped to this release's ServiceAccount/namespace.
+      create: true
+
+  postgres:
+    connectionString:
+      existingSecret: ""
+      key: connectionString
+    pollInterval: 5s
+    notifyChannel: authcallout_config_changed
+
+# PodDisruptionBudget (doc 08 HA guidance: keep at least one instance up during voluntary
+# disruption).
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Off by default (requires the Prometheus Operator CRD); stub for clusters that have it.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: ""
+  labels: {}
+  annotations: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Extra environment variables/volumes for edge cases the values surface doesn't cover.
+extraEnv: []
+extraVolumes: []
+extraVolumeMounts: []

@@ -1,0 +1,21 @@
+apiVersion: v2
+name: nats-auth-callout-service
+description: >-
+  NATS auth callout service (OIDC-token-gated NATS connect authorization).
+  Deploys AuthCallout.Host (doc 08) with any of the three routing config
+  sources (files, k8s CRD, PostgreSQL) per QUESTIONS A3 / implementation-plan
+  P17.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/ryandanthony/nats-auth-callout-service
+sources:
+  - https://github.com/ryandanthony/nats-auth-callout-service
+keywords:
+  - nats
+  - auth-callout
+  - oidc
+maintainers:
+  - name: Ryan Anthony
+    url: https://github.com/ryandanthony
+icon: https://nats.io/img/nats-icon-color.png
