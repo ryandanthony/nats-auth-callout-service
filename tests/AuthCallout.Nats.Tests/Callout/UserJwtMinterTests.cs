@@ -83,7 +83,9 @@ public sealed class UserJwtMinterTests : IDisposable
         Assert.Equal(grant.Expiry, userClaims.Expires);
         Assert.Equal(["notes.>", "notes.audit.>"], userClaims.User.Pub.Allow);
         Assert.Equal(["notes.inbox.>"], userClaims.User.Sub.Allow);
-        Assert.Equal(_issuerKeyPair.GetPublicKey(), userClaims.User.IssuerAccount);
+        // Config-mode auth_callout rejects a user JWT that names an issuer_account; the target
+        // account travels via Audience (asserted above), so IssuerAccount must stay unset (D18).
+        Assert.True(string.IsNullOrEmpty(userClaims.User.IssuerAccount));
     }
 
     [Fact]

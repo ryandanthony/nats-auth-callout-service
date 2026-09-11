@@ -51,7 +51,12 @@ public sealed class UserJwtMinter : IUserJwtMinter, IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(serverId);
 
         var userClaims = NatsJwt.NewUserClaims(userNKey);
-        userClaims.User.IssuerAccount = _issuerKeyPair.GetPublicKey();
+        // Config-mode auth_callout (the mode a static server.conf `accounts {}` block uses)
+        // places the connection via the JWT's audience = target account, and rejects any user
+        // JWT that names an issuer_account ("non operator mode account ...: attempted to use
+        // issuer_account"). issuer_account is an operator-mode chaining concept with no meaning
+        // in config mode, and D18 lists the minted JWT's fields as exactly account/name/exp/
+        // pub-sub allow lists — issuer_account is not among them. So it is deliberately not set.
         userClaims.Audience = grant.TargetAccount;
         userClaims.Name = grant.Name;
         userClaims.Expires = grant.Expiry;
