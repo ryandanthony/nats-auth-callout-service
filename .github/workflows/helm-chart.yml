@@ -1,0 +1,51 @@
+name: Helm chart
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "deploy/helm/**"
+      - "deploy/crd/**"
+      - ".github/workflows/helm-chart.yml"
+  pull_request:
+    paths:
+      - "deploy/helm/**"
+      - "deploy/crd/**"
+      - ".github/workflows/helm-chart.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-template:
+    name: helm lint + template goldens
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.16.2"
+
+      - name: helm lint (default values)
+        working-directory: deploy/helm/nats-auth-callout-service
+        run: helm lint . --set secrets.issuerSeed.existingSecret=ci-issuer-seed
+
+      - name: helm lint + template (files source golden)
+        working-directory: deploy/helm/nats-auth-callout-service
+        run: |
+          helm lint . -f ci/values/files.yaml
+          helm template golden-files . -f ci/values/files.yaml > /dev/null
+
+      - name: helm lint + template (k8s source golden)
+        working-directory: deploy/helm/nats-auth-callout-service
+        run: |
+          helm lint . -f ci/values/k8s.yaml
+          helm template golden-k8s . -f ci/values/k8s.yaml > /dev/null
+
+      - name: helm lint + template (postgres source golden)
+        working-directory: deploy/helm/nats-auth-callout-service
+        run: |
+          helm lint . -f ci/values/postgres.yaml
+          helm template golden-postgres . -f ci/values/postgres.yaml > /dev/null

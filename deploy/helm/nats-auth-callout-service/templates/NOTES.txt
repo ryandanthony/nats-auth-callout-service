@@ -1,0 +1,15 @@
+{{ include "nats-auth-callout-service.fullname" . }} deployed.
+
+Source: {{ .Values.source.kind }}
+
+Health probes (D21): port {{ .Values.health.port }}, /healthz /readyz /startupz.
+
+Check readiness:
+  kubectl port-forward svc/{{ include "nats-auth-callout-service.fullname" . }} 8080:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+  curl -s http://localhost:8080/readyz
+
+{{- if not .Values.secrets.issuerSeed.existingSecret }}
+
+WARNING: secrets.issuerSeed.existingSecret is empty. The Deployment will
+fail to boot until you provision the issuer seed Secret and set this value.
+{{- end }}

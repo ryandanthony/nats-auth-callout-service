@@ -1,0 +1,38 @@
+# Golden fixture: source.kind=files (default), with a sample app file and issuer secret.
+secrets:
+  issuerSeed:
+    existingSecret: authcallout-issuer
+
+source:
+  kind: files
+  files:
+    directory: /config/apps
+    configMap:
+      create: true
+      files:
+        notes.yaml: |
+          schemaVersion: 1
+          name: notes
+          targetAccount: NOTES
+          issuer:
+            authority: https://id.ants.zone/realms/main
+            jwksCache: 5m
+            validateAudience: true
+            audience: [nats]
+          match:
+            azp: [notes-web]
+          identityPropagation:
+            enabled: true
+          profiles:
+            - name: editor
+              match:
+                realm_access.roles: [notes-editor]
+              grant:
+                publish: ["notes.{tenant}.>"]
+                subscribe: ["notes.{tenant}.>"]
+              nameClaim: sub
+              variables:
+                - name: tenant
+                  claim: tenant_id
+                  required: true
+                  transforms: [lowercase, sanitize]

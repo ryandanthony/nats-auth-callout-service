@@ -1,0 +1,128 @@
+{{/*
+The Deployment (doc 08 §Process composition, §Health & readiness; D21 port/probes; D22
+OTel env; P03 k8sSecret mount contract). replicas: 2 default per doc 08 §Multiple instances
+HA guidance (all instances share the same queue-group subscription, so N instances is a
+pure scale/failover knob, not a correctness one).
+*/}}
+{{- $fullname := include "nats-auth-callout-service.fullname" . -}}
+{{- $secretNames := include "nats-auth-callout-service.k8sSecretNames" . | fromJsonArray -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "nats-auth-callout-service.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "nats-auth-callout-service.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nats-auth-callout-service.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "nats-auth-callout-service.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: nats-auth-callout-service
+          image: {{ include "nats-auth-callout-service.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: health
+              containerPort: {{ .Values.health.port }}
+              protocol: TCP
+          env:
+            {{- if .Values.otel.serviceName }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.otel.serviceName | quote }}
+            {{- end }}
+            {{- if .Values.otel.otlpEndpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.otlpEndpoint | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          # D21: startupProbe gates slow first-config/secret resolution before liveness can
+          # trip; readiness only 200s in Serving; liveness (self) is independent of NATS/config.
+          startupProbe:
+            httpGet:
+              path: /startupz
+              port: health
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: bootstrap
+              mountPath: /config
+              readOnly: true
+            {{- if eq .Values.source.kind "files" }}
+            - name: apps
+              mountPath: {{ .Values.source.files.directory }}
+              readOnly: true
+            {{- end }}
+            {{- range $secretNames }}
+            - name: {{ include "nats-auth-callout-service.secretVolumeName" . }}
+              mountPath: {{ printf "/var/run/secrets/%s" . }}
+              readOnly: true
+            {{- end }}
+            {{- with $.Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: bootstrap
+          configMap:
+            name: {{ $fullname }}-bootstrap
+        {{- if eq .Values.source.kind "files" }}
+        - name: apps
+          configMap:
+            name: {{ if .Values.source.files.configMap.create }}{{ $fullname }}-apps{{ else }}{{ required "source.files.configMap.existingConfigMap is required when source.files.configMap.create is false" .Values.source.files.configMap.existingConfigMap }}{{ end }}
+        {{- end }}
+        {{- range $secretNames }}
+        - name: {{ include "nats-auth-callout-service.secretVolumeName" . }}
+          secret:
+            secretName: {{ . }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,17 @@
+{{- if .Values.service.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nats-auth-callout-service.fullname" . }}
+  labels:
+    {{- include "nats-auth-callout-service.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: health
+      port: {{ .Values.service.port }}
+      targetPort: health
+      protocol: TCP
+  selector:
+    {{- include "nats-auth-callout-service.selectorLabels" . | nindent 4 }}
+{{- end -}}

@@ -1,0 +1,17 @@
+# Golden fixture: source.kind=k8s, with CRD install + RBAC enabled.
+secrets:
+  issuerSeed:
+    existingSecret: authcallout-issuer
+  serviceUserSeed:
+    enabled: true
+    existingSecret: authcallout-svc
+    key: seed
+
+source:
+  kind: k8s
+  k8s:
+    labelSelector: "app.kubernetes.io/managed-by=nats-auth-callout"
+    crds:
+      install: true
+    rbac:
+      create: true

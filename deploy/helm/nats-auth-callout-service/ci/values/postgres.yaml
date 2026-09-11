@@ -1,0 +1,22 @@
+# Golden fixture: source.kind=postgres, connection string as k8sSecret + assertion keyset.
+secrets:
+  issuerSeed:
+    existingSecret: authcallout-issuer
+  assertionKeys:
+    - kid: "2026-09-06a"
+      existingSecret: authcallout-assertion-a
+      key: seed
+      active: true
+    - kid: "2026-08-01a"
+      existingSecret: authcallout-assertion-old
+      key: seed
+      active: false
+
+source:
+  kind: postgres
+  postgres:
+    connectionString:
+      existingSecret: authcallout-db
+      key: connectionString
+    pollInterval: 5s
+    notifyChannel: authcallout_config_changed

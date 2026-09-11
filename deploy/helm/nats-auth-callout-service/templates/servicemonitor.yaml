@@ -1,0 +1,34 @@
+{{/*
+Optional ServiceMonitor (Prometheus Operator CRD), off by default per P17's task list.
+The service exposes health endpoints, not a Prometheus /metrics scrape endpoint — metrics
+flow via OTLP (D22) — but some clusters still want a ServiceMonitor stub wired for a
+sidecar/collector that exposes a scrape endpoint on the same Service. Left as a stub for
+operators who add one; disabled by default so `helm template` never depends on the
+monitoring.coreos.com CRD being installed.
+*/}}
+{{- if .Values.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "nats-auth-callout-service.fullname" . }}
+  labels:
+    {{- include "nats-auth-callout-service.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.serviceMonitor.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "nats-auth-callout-service.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: health
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      {{- if .Values.serviceMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+      {{- end }}
+{{- end -}}
