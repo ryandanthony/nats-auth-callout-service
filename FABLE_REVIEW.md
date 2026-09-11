@@ -33,7 +33,7 @@ reversed candidates[0] = app-b, ValidateAudience=False
 
 **Fix:** add an aggregate validation rule (`divergent-issuer-config`) that rejects a config where two applications share an `authority` but differ in any validation-relevant `IssuerConfig` field. `IssuerConfig` already implements structural equality, so this is a ~10-line validator addition. That converts the code comment's assumption into an enforced invariant.
 
-### S2 (HIGH, design-level) — `_INBOX.>` subscribe on every authenticated grant allows cross-client inbox eavesdropping
+### S2 (HIGH, design-level) — `_INBOX.>` subscribe on every authenticated grant allows cross-client inbox eavesdropping — **FIXED in `d49162b`** (scoped `_INBOX.{slug}.{derived-principal}.>` grant + client `InboxPrefix`; all suites incl. integration green)
 
 `GrantBuilder.BuildSubscribe` adds `AppSlug.ClientInboxSubscribeSubject` (`_INBOX.>`) unconditionally to every authenticated grant (keys + discovery reads are unconditional, so the inbox grant always fires). ADR 0013 acknowledges this as "the minimal grant that still works", but it is worth stating plainly what it costs: **every authenticated client can subscribe to every other client's request-reply inboxes in the same target account.** Any request-reply traffic between services in that account (including other clients' KV direct-get responses, which carry stored OIDC tokens when `autoAddSessionAccess` is in play) is readable by any authenticated principal, including one holding the least-privileged profile. (The repo's own tests pin this: `GrantBuilderTests` asserts `_INBOX.>` is present in every authenticated grant's subscribe list.)
 
@@ -51,7 +51,7 @@ This partially undermines the care taken elsewhere to scope `$JS.API` publish su
 
 **Fix options:** NATS supports custom inbox prefixes (`NatsOpts.InboxPrefix` in NATS.NET, `custom_inbox_prefix` in other clients). Grant `_INBOX_{connection-id}.>` (or `_INBOX.{safe-name}.>`) and document that propagation-consuming clients must set the matching inbox prefix. **The mitigation was itself validated live** on the same server: with each user granted only its own scoped prefix (e.g. `_INBOX_v.>`) and the client using `--inbox-prefix _INBOX_v`, request-reply worked normally (`Received with rtt 593µs`), while the attacker's subscriptions to both `_INBOX.>` and the victim's `_INBOX_v.>` were rejected with `Permissions Violation for Subscription`. If that's deemed too much client burden for v1, at minimum promote this from an ADR footnote to a loud, threat-model-level warning in the operations docs: "one account per application, and every authenticated user in an account can read every inbox in it."
 
-### S3 (MEDIUM) — Self-lookup key sanitization can collide across principals, enabling assertion takeover/impersonation
+### S3 (MEDIUM) — Self-lookup key sanitization can collide across principals, enabling assertion takeover/impersonation — **FIXED in `d49162b`** (`AppSlug.DeriveKeySegment`: sanitized + 16-hex SHA-256 suffix, applied to grant subject, store writer, and client sample)
 
 `AppSlug.SanitizeKeySegment` lowercases and collapses every run of characters outside `[a-z0-9-]` to a single `_`. The self-lookup key is `jti` with a `sub` fallback (`GrantBuilder.ResolveSelfLookupKey`), and `KvIdentityStoreWriter.CreateOrReplaceAsync` deliberately **purges and replaces** on key collision.
 
@@ -182,8 +182,8 @@ Several files are >60% comments (e.g. `EventSubjectResolver` is ~50 lines of XML
 
 1. **S1** — add the divergent-issuer-config validation rule (small, closes a real bypass).
 2. **S4** — fix `schemaVersion` field name before any consumer exists (breaking later).
-3. **S3** — collision-resistant self-lookup keys (small, closes impersonation edge).
-4. **S2** — decide: per-connection inbox prefixes, or a documented threat-model warning.
+3. ~~**S3** — collision-resistant self-lookup keys~~ — **done** (`d49162b`).
+4. ~~**S2** — per-connection inbox prefixes~~ — **done** (`d49162b`, scoped per-principal prefixes).
 5. **M1** — delete `IConnectionIdGenerator`.
 6. **M3/M4/M5** — dedupe mappers, collapse result structs, tune the analyzer config.
 7. **S5/S6 + doc drifts** — docs pass.
