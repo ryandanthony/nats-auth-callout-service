@@ -4,7 +4,7 @@ Reviewed 2026-09-11 at `65c5bfc` (main). Scope: design docs + ADRs, then the
 full `src/` tree, with emphasis on (a) security, (b) manufactured code that
 isn't needed, (c) code that is more complex than it needs to be.
 
-Findings S1, S3, S4 and the `Verify`-ignores-`exp` behavior were **empirically
+Findings S1, S2, S3, S4 and the `Verify`-ignores-`exp` behavior were **empirically
 confirmed by executing the repo's own built assemblies** (a throwaway harness
 referencing `bin/Debug/net10.0` DLLs); observed outputs are quoted inline.
 The repo's own test suites were also run and are green — all six unit suites
@@ -82,6 +82,26 @@ clients' KV direct-get responses, which carry stored OIDC tokens when
 including one holding the least-privileged profile. (The repo's own tests pin
 this: `GrantBuilderTests` asserts `_INBOX.>` is present in every authenticated
 grant's subscribe list.)
+
+**Confirmed by live experiment** against a real `nats-server` 2.14: two users
+in one account, the attacker's permissions an exact mirror of a minted
+least-privilege grant (static subjects + per-stream `$JS.API` publishes +
+`$KV` reads + `_INBOX.>` subscribe). While a victim user ran an ordinary
+request-reply, the attacker's `_INBOX.>` subscription captured the victim's
+reply payload verbatim:
+
+```text
+# attacker (sub '_INBOX.>'):
+[#1] Received on "_INBOX.hzpsb0O0C4vxesFPfa6FTC.plK5b4rP"
+SECRET-ORDER-DATA-42 for customer-777
+```
+
+Note: `_INBOX` is **not** special-cased by the server — the NATS docs state
+the inbox prefix is only a client-side naming convention, and permissions are
+pure subject-pattern matching with no ownership concept. The per-request NUID
+suffix is the sole protection, and a `>` wildcard defeats it. NATS's
+`allow_responses` mechanism covers only the *publish* (responder) side; there
+is no subscribe-side equivalent.
 
 This partially undermines the care taken elsewhere to scope `$JS.API` publish
 subjects per backing stream — the reply leg is world-readable.
