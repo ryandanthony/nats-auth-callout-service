@@ -71,6 +71,11 @@ realm import from `AppHost.Local/realm/dev-realm.json`, host port `8081`),
   enabled=True`, `fetched own signed identity assertion`, and the subscriber
   loop resolving the publisher's original OIDC claim via the token-store
   bucket (`autoAddSessionAccess`) — the full doc 06 propagation sequence.
+  **Verified live** (2026-09-10): both samples run to completion end to end
+  — connect, discover, fetch their own assertion, publish with
+  `Callout-Identity`, and the subscriber verifies the signature and resolves
+  `preferred_username` from the caller's stored OIDC token — with zero NATS
+  permission violations and all three health endpoints `Healthy`.
 
 **Hot-reload check:** with the loop running, edit
 `dev/AppHost.Local/config/apps/Note.yaml` (e.g. add a role to `match`) and
@@ -78,6 +83,25 @@ save. `FileRoutingConfigProvider`'s own file watcher (P10) picks it up
 without restarting the callout — watch `config-source`'s
 `lastSuccessfulSync` on `/readyz` advance, or the dashboard's structured
 logs for a new config-apply batch.
+
+**Why `nats/server.conf` exists.** `AuthCallout.Host`'s own service-user
+connection runs in a dedicated `AUTH` account (doc 08 §Why the auth service
+runs in its own account), so the NATS server needs `accounts {}` +
+`auth_callout` wired by hand — Aspire's `AddNats` helper always injects a
+global `--user`/`--pass`, which `nats-server` rejects once an `accounts {}`
+block exists. See that file's own comments for two more things it encodes
+that aren't obvious from the NATS docs alone: (1) `$JS.API.>`/`$KV.>` must be
+exported from `AUTH` and imported into every target account, because the
+identity-store KV buckets (discovery/keys/token/assertions) are created via
+the callout's own `AUTH`-account connection but real clients connect into
+`NOTES`/`TASKS`/`ANON` — NATS account isolation otherwise makes those
+buckets invisible cross-account even though the minted grant's own
+`$KV.<bucket>.<key>` subjects are correct; (2) the importing accounts must
+**not** also set `jetstream: enabled` themselves, or their own local
+JetStream domain silently shadows the `$JS.API.>` import. Both are recorded
+as open M2 design questions for Ryan (should these grants move into
+`GrantBuilder`/the bucket placement change?) — this file is the dev-loop
+workaround in the meantime, not the intended long-term shape.
 
 ### AppHost.K8s (CRD source, cluster loop)
 
@@ -101,6 +125,25 @@ can run side by side), Keycloak (host port `8082`), `AuthCallout.Host`
 as `AppHost.Local`, plus the `k8s` cluster resource and the `namespaces`,
 `crd`, `rbac`, `apps` manifest-apply resources all reaching `Finished`/
 `Running` in the dashboard before `callout` starts.
+
+**Known issue (2026-09-10, escalated, not dev/-fixable):** on a machine
+with a `~/.kube/config` pointing at some *other* real cluster,
+`AuthCallout.Config.K8s`'s `CrdKubernetesClient.ResolveConfig()` calls
+`KubernetesClientConfiguration.BuildConfigFromConfigFile()` with no
+arguments when not running in-cluster — that overload's null-path default
+does **not** honor the `KUBECONFIG` environment variable Aspire injects; it
+silently reads the fixed default `~/.kube/config` location instead. The
+callout then tries to reach whatever cluster that file points at rather
+than this loop's own K3s, and the k8s source never makes its first list
+call — `/readyz` sits at `503`/`"state":"Starting"` forever with
+`config-source.lastSuccessfulSync: never`. Verified everything *except*
+that one call is correct on the K8s side: `kubectl --kubeconfig
+dev/AppHost.K8s/.k3s/k8s/local/kubeconfig.yaml get authapplications -A`
+shows both CRs applied with the right labels, and the identity that
+kubeconfig grants can list/watch them. Unset/rename any conflicting
+`~/.kube/config` as a workaround until the fix lands, or watch for a P11
+commit swapping to `KubernetesClientConfiguration.BuildDefaultConfig()`
+(which does check `KUBECONFIG`) or an explicit `Environment.GetEnvironmentVariable("KUBECONFIG")` pass-through.
 
 **Live-patch check:** with the loop running and `kubectl` pointed at the
 AppHost's cluster (`export KUBECONFIG=dev/AppHost.K8s/.k3s/k8s/local/
