@@ -27,13 +27,16 @@ jobs:
           fetch-depth: 0   # GitVersion needs full history and tags
 
       - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v3.1.11
+        uses: gittools/actions/gitversion/setup@v4
         with:
-          versionSpec: '6.x'
+          # Match the GitVersion.MsBuild package pinned in Directory.Packages.props (6.6.0).
+          # gittools/actions v4 is the major that supports GitVersion 6.x; the older v3 line
+          # caps at <6.1.0, so '6.x' floated past its supported range and failed the install.
+          versionSpec: '6.6.0'
 
       - name: Determine version
         id: gitversion
-        uses: gittools/actions/gitversion/execute@v3.1.11
+        uses: gittools/actions/gitversion/execute@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
