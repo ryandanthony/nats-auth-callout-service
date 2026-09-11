@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Sdk Name="Aspire.AppHost.Sdk" Version="13.5.3" />
+
+  <!-- P15 AppHost.K8s (doc 08 §Local development, "AppHost 2 - AppHost.K8s (CRD source, local
+       K3s)"): the cluster loop. Same callout binary, samples, NATS, and Keycloak dev IdP as
+       AppHost.Local, but the callout runs against the Kubernetes CRD source (Source__Kind=k8s)
+       backed by a real (lightweight) K3s cluster via the Community Toolkit's AddK3sCluster - no
+       external cluster required. Proves the files and CRD sources converge on the identical
+       canonical model (ADR 0007) end to end, not just in unit tests.
+
+       Aspire.AppHost.Sdk's version here is independent of Directory.Packages.props (an MSBuild
+       Sdk import, not a NuGet PackageReference) but is pinned to match the
+       Aspire.Hosting.AppHost PackageVersion the coordinator added, so the two never drift. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsAspireHost>true</IsAspireHost>
+    <UserSecretsId>3d2b7e9f-6b7a-4d2e-8f5a-0e1c9a3b6d7e</UserSecretsId>
+    <!-- MA0048 (file name must match type name) does not apply to Aspire's top-level-
+         statement AppHost.cs, which declares no type. CA1017 fires because Aspire's
+         source-generated Projects.* types are externally visible; this AppHost is never
+         COM-consumed, so ComVisible(false) would be a no-op ceremony, not a real fix. -->
+    <NoWarn>$(NoWarn);MA0048;CA1017</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.AppHost" />
+    <PackageReference Include="Aspire.Hosting.Nats" />
+    <PackageReference Include="Aspire.Hosting.Keycloak" />
+    <PackageReference Include="CommunityToolkit.Aspire.Hosting.K3s" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- AuthCallout.Host is not registered in AuthCallout.slnx (coordinator's call: "keep
+         dev/ AppHosts OUT of AuthCallout.slnx" so CI's sln build/coverage gate stays clean of
+         Aspire + the prerelease Keycloak package). Aspire's Projects.* source generator reads
+         ProjectReference items on the AppHost project itself, not the solution, so
+         Projects.AuthCallout_Host / Projects.NoteService / Projects.TaskService are still
+         generated normally from the references below. -->
+    <ProjectReference Include="../../src/AuthCallout.Host/AuthCallout.Host.csproj" />
+    <ProjectReference Include="../samples/NoteService/NoteService.csproj" />
+    <ProjectReference Include="../samples/TaskService/TaskService.csproj" />
+  </ItemGroup>
+
+</Project>
