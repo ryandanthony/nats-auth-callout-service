@@ -126,7 +126,12 @@ public sealed class FileRoutingConfigProviderTests : IDisposable
     [Fact]
     public async Task RapidWrites_DebounceToOneBatch()
     {
-        await using var provider = CreateProvider(debounceWindow: TimeSpan.FromMilliseconds(200), reconcileInterval: TimeSpan.FromMinutes(10));
+        // Debounce window (500ms) is set well above the inter-write gap so the writes coalesce
+        // deterministically: the watcher resets its timer on each event, so as long as no gap
+        // between writes exceeds the window they collapse to one batch. A generous window keeps
+        // this robust to CI scheduling jitter stalling a Task.Delay past a tighter window (which
+        // would fire an early batch and split the writes).
+        await using var provider = CreateProvider(debounceWindow: TimeSpan.FromMilliseconds(500), reconcileInterval: TimeSpan.FromMinutes(10));
         using var cts = new CancellationTokenSource(TestTimeout);
         var enumerator = provider.WatchAsync(cts.Token).GetAsyncEnumerator(cts.Token);
 
@@ -140,7 +145,10 @@ public sealed class FileRoutingConfigProviderTests : IDisposable
             await Task.Delay(20, cts.Token);
         }
 
-        var batches = await CollectBatchesWithinAsync(enumerator, TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(300));
+        // Idle timeout (1.5s) must exceed the debounce window so the collector waits for the
+        // single debounced batch to arrive (rather than declaring idle before it fires), while
+        // still catching a hypothetical second batch within the 4s collect window.
+        var batches = await CollectBatchesWithinAsync(enumerator, TimeSpan.FromSeconds(4), TimeSpan.FromMilliseconds(1500));
 
         // The reconcile timer is set far in the future, so every batch observed here came from
         // the debounced watcher path; five rapid writes should coalesce into exactly one.
