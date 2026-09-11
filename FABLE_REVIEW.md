@@ -4,6 +4,10 @@ Reviewed 2026-09-11 at `65c5bfc` (main). Scope: design docs + ADRs, then the
 full `src/` tree, with emphasis on (a) security, (b) manufactured code that
 isn't needed, (c) code that is more complex than it needs to be.
 
+Findings S1, S3, S4 and the `Verify`-ignores-`exp` behavior were **empirically
+confirmed by executing the repo's own built assemblies** (a throwaway harness
+referencing `bin/Debug/net10.0` DLLs); observed outputs are quoted inline.
+
 **Overall:** this is a well-designed, unusually well-documented codebase. The
 design docs and ADRs are genuinely load-bearing (the code cites them and mostly
 matches them), validation is strict and fail-closed, and the dangerous JWT
@@ -40,6 +44,19 @@ failed A's audience check can validate under B's laxer parameters and then
 route to A at stage 3. `JwksCacheManager.SyncIssuers` has the same
 first-candidate pick for `jwksUri`/`refreshInterval`.
 
+**Confirmed by execution** against the built `AuthCallout.Contracts.dll`: an
+aggregate with `app-a` (strict: `validateAudience: true`, full algorithm list)
+and `app-b` (lax: `validateAudience: false`, `clockSkew: 300s`) on the same
+authority returns `ConfigValidator.ValidateRouting → IsValid=True, errors=0`,
+and `IssuerIndex[authority][0]` flips between the strict and lax `IssuerConfig`
+purely on application ordering:
+
+```text
+S1 divergent-issuer aggregate: IsValid=True, errors=0
+candidates[0] = app-a, ValidateAudience=True
+reversed candidates[0] = app-b, ValidateAudience=False
+```
+
 **Fix:** add an aggregate validation rule (`divergent-issuer-config`) that
 rejects a config where two applications share an `authority` but differ in any
 validation-relevant `IssuerConfig` field. `IssuerConfig` already implements
@@ -57,7 +74,9 @@ every other client's request-reply inboxes in the same target account.** Any
 request-reply traffic between services in that account (including other
 clients' KV direct-get responses, which carry stored OIDC tokens when
 `autoAddSessionAccess` is in play) is readable by any authenticated principal,
-including one holding the least-privileged profile.
+including one holding the least-privileged profile. (The repo's own tests pin
+this: `GrantBuilderTests` asserts `_INBOX.>` is present in every authenticated
+grant's subscribe list.)
 
 This partially undermines the care taken elsewhere to scope `$JS.API` publish
 subjects per backing stream — the reply leg is world-readable.
@@ -95,6 +114,14 @@ many-to-one by construction. ADR 0013 already flags "`{jti}` sanitization is
 mandatory: … colliding key" as a known hazard but the current transform invites
 exactly that.
 
+**Confirmed by execution** of the real `AppSlug.SanitizeKeySegment`:
+
+```text
+'User.A' -> 'user_a'
+'user_a' -> 'user_a'
+'USER A' -> 'user_a'
+```
+
 **Fix:** make the key collision-resistant instead of merely subject-safe —
 e.g. `sanitized + "_" + first-16-hex(SHA256(raw))` (the `TransformPipeline.Hash`
 helper already exists), applied identically in the grant subject and the write
@@ -110,7 +137,14 @@ private sealed record AssertionPayload(int PayloadSchemaVersion, string Id, ...)
 ```
 
 With the camelCase naming policy this goes on the wire as
-`"payloadSchemaVersion": 1`. ADR 0011 / doc 09 / the AssertionSigner's own XML
+`"payloadSchemaVersion": 1`. **Confirmed by executing** the real
+`AssertionSigner.Sign` and decoding the produced compact JWT:
+
+```text
+payload: {"payloadSchemaVersion":1,"id":"conn-id-123","sub":"user-sub","app":"my-app","iss":"https://idp.example","exp":1789162032}
+```
+
+ADR 0011 / doc 09 / the AssertionSigner's own XML
 doc say the claim is `schemaVersion` ("reuse the ADR 0008 schemaVersion
 discipline"). External consumers implementing verification from the docs will
 look for a field that isn't there. This is an interop contract drift, cheap to
@@ -119,8 +153,10 @@ fix now and breaking to fix after consumers exist. Rename via
 chosen to dodge a naming collision or analyzer rule — attribute it instead).
 
 Related nit: `Verify` checks `alg` and signature but not `typ`, and does not
-validate `exp` — expiry is delegated to consumers per doc 06, which is
-consistent, but since this class is the de-facto reference verifier (see M2
+validate `exp` — **confirmed by execution**: `signer.Verify` on an assertion
+with `exp` ten minutes in the past returns a non-null `AssertionClaims`
+(`Verify(expired): True`). Expiry is delegated to consumers per doc 06, which
+is consistent, but since this class is the de-facto reference verifier (see M2
 below) an `exp` check here would prevent consumer copy-paste bugs.
 
 ### S5 (MEDIUM, design-accepted but under-signposted) — Raw bearer tokens in a bucket-wide readable KV
