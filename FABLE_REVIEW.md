@@ -7,6 +7,10 @@ isn't needed, (c) code that is more complex than it needs to be.
 Findings S1, S3, S4 and the `Verify`-ignores-`exp` behavior were **empirically
 confirmed by executing the repo's own built assemblies** (a throwaway harness
 referencing `bin/Debug/net10.0` DLLs); observed outputs are quoted inline.
+The repo's own unit suites were also run and are green (Contracts 183, Core
+181, Identity 64, all passing) — i.e. the demonstrated behaviors coexist with
+a fully passing test suite, so each is a genuine coverage gap, not a
+regression or a misreading.
 
 **Overall:** this is a well-designed, unusually well-documented codebase. The
 design docs and ADRs are genuinely load-bearing (the code cites them and mostly
