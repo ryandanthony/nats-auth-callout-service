@@ -29,3 +29,6 @@ dev/**/appsettings.*.local.json
 
 # Logs
 *.log
+
+# Aspire K3s AppHost runtime state (Testcontainers/k3s kubeconfig + data, not source)
+dev/**/.k3s/
