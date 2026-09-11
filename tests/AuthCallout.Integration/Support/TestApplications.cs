@@ -39,23 +39,23 @@ public static class TestApplications
 
 #pragma warning disable S2339 // Kept const (matching the repo's existing named-constant pattern); these are wire-protocol subject literals, not mutable state.
     /// <summary>
-    /// The <c>$JS.API.STREAM.INFO.&gt;</c>/<c>$JS.API.DIRECT.GET.&gt;</c> publish subjects and
-    /// <c>_INBOX.&gt;</c> subscribe subject NATS.Net's own KV client needs under the hood
+    /// The <c>$JS.API.STREAM.INFO.&gt;</c>/<c>$JS.API.DIRECT.GET.&gt;</c> publish subjects
+    /// NATS.Net's own KV client needs under the hood
     /// (<c>NatsKVContext.GetStoreAsync</c>/<c>GetEntryAsync</c>) on top of the
     /// <c>$KV.&lt;bucket&gt;.&lt;key&gt;</c> subjects ADR 0013/<c>GrantBuilder</c> already grant —
     /// not part of the KV grant contract itself, just what the wire protocol requires to look
-    /// up a bucket's backing stream and receive the reply (found validating this suite against
-    /// a real server; matches P15's own <c>dev/AppHost.Local/config/apps/Note.yaml</c> fix).
+    /// up a bucket's backing stream. The inbox reply path is NOT added here: <c>GrantBuilder</c>
+    /// auto-adds the scoped per-principal inbox subject, and these tests deliberately rely on
+    /// that auto-grant (plus the matching client-side <c>InboxPrefix</c>) so the scoped-inbox
+    /// contract is what the suite actually exercises.
     /// </summary>
     private static readonly IReadOnlyList<string> KvClientPublishSubjects = ["$JS.API.STREAM.INFO.>", "$JS.API.DIRECT.GET.>"];
-
-    private static readonly IReadOnlyList<string> KvClientSubscribeSubjects = ["_INBOX.>"];
 #pragma warning restore S2339
 
-    /// <summary>Builds a <see cref="Grant"/> for a real subject list plus the standing <see cref="KvClientPublishSubjects"/>/<see cref="KvClientSubscribeSubjects"/> every profile needs.</summary>
+    /// <summary>Builds a <see cref="Grant"/> for a real subject list plus the standing <see cref="KvClientPublishSubjects"/> every profile needs.</summary>
     private static Grant GrantWithKvClientSubjects(IReadOnlyList<string> publish, IReadOnlyList<string> subscribe) => new(
         Publish: [.. publish, .. KvClientPublishSubjects],
-        Subscribe: [.. subscribe, .. KvClientSubscribeSubjects]);
+        Subscribe: subscribe);
 
     /// <summary>Builds the <c>notes</c> application: editor profile granted <c>notes.dev.&gt;</c>, identity propagation enabled, <c>autoAddSessionAccess</c> on the editor profile.</summary>
     /// <param name="issuerAuthority">The Keycloak realm issuer authority (<see cref="Fixtures.KeycloakFixture.IssuerAuthority"/>).</param>

@@ -30,9 +30,9 @@ public static class CalloutSelfAssertion
             ?? throw new InvalidOperationException("Presented token has neither 'jti' nor 'sub'; cannot self-lookup the assertion.");
 
         var assertionsBucket = await kv.GetStoreAsync(descriptor.IdentityPropagation.AssertionBucket!).ConfigureAwait(false);
-        var entry = await assertionsBucket.GetEntryAsync<string>(SanitizeKey(selfLookupKey)).ConfigureAwait(false);
+        var entry = await assertionsBucket.GetEntryAsync<string>(DeriveKey(selfLookupKey)).ConfigureAwait(false);
         return entry.Value!;
     }
 
-    private static string SanitizeKey(string segment) => AuthCallout.Contracts.Config.AppSlug.SanitizeKeySegment(segment);
+    private static string DeriveKey(string segment) => AuthCallout.Contracts.Config.AppSlug.DeriveKeySegment(segment);
 }

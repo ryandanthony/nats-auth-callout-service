@@ -24,7 +24,7 @@ profiles:
     grant:
       # Only the app's own subjects are configured. The callout auto-adds the KV read grants
       # (keys/discovery/token/assertion $KV.* reads) AND the JetStream wire-level subjects a
-      # real KV client needs ($JS.API.STREAM.INFO/DIRECT.GET per bucket + _INBOX.> reply path),
+      # real KV client needs ($JS.API.STREAM.INFO/DIRECT.GET per bucket + the scoped per-principal inbox reply path),
       # so identity-propagation reads work without any KV plumbing in app config (ADR 0013).
       publish: [notes.dev.>]
       subscribe: [notes.dev.>]

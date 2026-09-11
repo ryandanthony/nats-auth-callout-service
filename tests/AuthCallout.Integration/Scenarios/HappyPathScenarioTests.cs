@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------
 
 using System.Text;
+using AuthCallout.Contracts.Config;
 using AuthCallout.Contracts.Seams;
 using AuthCallout.Identity.Assertions;
 using AuthCallout.Integration.Fixtures;
@@ -85,7 +86,7 @@ public sealed class HappyPathScenarioTests(IntegrationEnvironment environment) :
         var storedToken = await FindTokenRecordAsync(token);
         Assert.NotNull(storedToken);
 
-        var storedAssertion = await assertionStore.GetEntryAsync<string>(jti);
+        var storedAssertion = await assertionStore.GetEntryAsync<string>(AppSlug.DeriveKeySegment(jti));
         Assert.NotNull(storedAssertion.Value);
         Assert.Equal(3, storedAssertion.Value!.Split('.').Length); // header.payload.signature.
     }
@@ -125,7 +126,7 @@ public sealed class HappyPathScenarioTests(IntegrationEnvironment environment) :
         // Client fetches its own assertion via the granted self-lookup read (doc 06).
         var assertionsKv = publisherClient.CreateKeyValueStoreContext();
         var assertionsStore = await assertionsKv.GetStoreAsync("callout_apps_notes_assertions");
-        var assertionEntry = await assertionsStore.GetEntryAsync<string>(jti);
+        var assertionEntry = await assertionsStore.GetEntryAsync<string>(AppSlug.DeriveKeySegment(jti));
         var assertion = assertionEntry.Value!;
 
         // A second notes-app connection (the same editor profile carries autoAddSessionAccess
@@ -186,10 +187,15 @@ public sealed class HappyPathScenarioTests(IntegrationEnvironment environment) :
 
     private async Task<NatsConnection> ConnectWithTokenAsync(string token)
     {
+        // The callout grants a scoped inbox (_INBOX.{slug}.{derived-principal}.>), not the
+        // account-wide _INBOX.>; the client must use the matching custom prefix or its KV
+        // reads/request-replies would be silently denied their reply subscription.
+        var principal = JwtInspector.ReadClaim(token, "sub");
         var conn = new NatsConnection(new NatsOpts
         {
             Url = environment.Nats.ConnectionUrl,
             AuthOpts = new NatsAuthOpts { Token = token },
+            InboxPrefix = AppSlug.From(TestApplications.NotesAppName).ClientInboxPrefix(principal),
         });
         await conn.ConnectAsync();
         return conn;

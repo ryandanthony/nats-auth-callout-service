@@ -52,7 +52,7 @@ To guarantee both bucket-name and key validity, dynamic segments are sanitized w
 - Trim leading/trailing separators.
 - Reject (fail closed) if the result is empty, exceeds the length budget, or collides with another application's slug (validated per ADR 0010).
 
-`{id}` is a callout-generated GUID and `{kid}` is a key id the callout controls, so both are already safe; the transform is a defensive backstop. `{jti}` comes from the token and **must** be sanitized before use as a key.
+`{id}` is a callout-generated GUID and `{kid}` is a key id the callout controls, so both are already safe; the transform is a defensive backstop. `{jti}` (and its `sub` fallback) comes from the token and **must not** be used sanitized-only: sanitization is many-to-one (`User.A`, `user_a`, and `USER A` all sanitize to `user_a`), so distinct principals could alias each other's entries. Token-supplied key segments therefore use the **key derivation**: `sanitize(raw) + "_" + first-16-hex(SHA-256(raw))` (`AppSlug.DeriveKeySegment`), which keeps the segment operator-readable while making distinct raw values yield distinct keys. Both the granted self-lookup subject and the store-writer's actual key derive through the same function, so they can never diverge.
 
 ### Grant subjects follow the physical mapping
 
@@ -75,15 +75,29 @@ replies on its connection inbox. So for every bucket a grant can read, the minte
 - **Publish** `$JS.API.STREAM.INFO.KV_<bucket>` and `$JS.API.DIRECT.GET.KV_<bucket>` — scoped
   to that single backing stream, never the account-wide `$JS.API.>`, so a grant reaches only
   the buckets it was granted `$KV` read on.
-- **Subscribe** `_INBOX.>` (once per grant that reads at least one bucket) — the request-reply
-  path for those JetStream API calls. NATS.NET assigns each connection an unpredictable
-  `_INBOX.<nuid>` prefix the callout cannot know in advance, so the wildcard inbox is the
-  minimal grant that works.
+- **Subscribe** `_INBOX.{app-slug}.{derived-principal-key}.>` (once per grant that reads at
+  least one bucket) — the request-reply path for those JetStream API calls, **scoped to the
+  connection's own principal** (`sub`, falling back to `azp`, then the minted name; derived
+  via the key derivation above). The account-wide `_INBOX.>` is deliberately **not** granted:
+  it would let every authenticated client subscribe to every other client's request replies
+  in the account (verified against a real server — `_INBOX` has no server-side ownership
+  semantics; it is only a client-side naming convention). The client must configure the
+  matching custom inbox prefix (`NatsOpts.InboxPrefix` in NATS.NET, `custom_inbox_prefix`
+  in other clients): `_INBOX.{app-slug}.{derived-principal-key}`, computable client-side
+  from the app slug and its own token. Connections sharing a principal share a prefix
+  (same identity); everyone else's inbox is out of reach.
 
 These are auto-added by `GrantBuilder` alongside the `$KV.*` reads (they are not something
 application config must specify), keeping the logical model in config and the wire-level
 plumbing in the callout. Without them the read sequence in [doc 06](../design/06-identity-propagation-sequence.md)
 cannot complete for a real client.
+
+A **responder** service (one that answers NATS request-reply on an app subject) additionally
+needs to *publish* to its requesters' reply subjects. That is a profile-config concern, not
+an auto-grant: give the responder profile `publish: ["_INBOX.{app-slug}.>"]`. Publishing to
+an inbox is a far weaker capability than subscribing to one (it can send a reply, not read
+anyone's traffic), so the app-wide publish grant is acceptable where the app-wide subscribe
+grant was not.
 
 ### Single source of truth
 
@@ -96,7 +110,7 @@ The mapping is implemented **once** as a pure function (`BucketNaming` in `AuthC
 - The discovery descriptor removes the need for consumers to hard-code the naming rule; only the descriptor field names remain a fixed contract.
 - Changing the mapping is a breaking change for existing consumers and must bump the discovery descriptor `schemaVersion` (and, if the shape changes, the CRD/event schema versions).
 - A shared `BucketNaming` function is the only place bucket/key strings are formed; tests assert writer, minter, and descriptor all agree.
-- `{jti}` sanitization is mandatory: an unsanitized token value could otherwise produce an invalid or colliding key, or escape its intended entry.
+- `{jti}` key derivation is mandatory: an unsanitized token value could otherwise produce an invalid key, and a sanitized-only value could collide across principals (aliasing one client's assertion entry to another's).
 
 ## Related
 

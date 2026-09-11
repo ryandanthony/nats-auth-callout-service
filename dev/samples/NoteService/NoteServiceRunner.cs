@@ -66,6 +66,11 @@ public static class NoteServiceRunner
             Url = natsUrl,
             Name = "note-sample",
             AuthOpts = new NatsAuthOpts { Token = token },
+
+            // The callout grants a scoped inbox (_INBOX.{slug}.{principal-key}.>), not the
+            // account-wide _INBOX.>; the connection must use the matching prefix or KV reads
+            // (and any request-reply) would be silently denied their reply subscription.
+            InboxPrefix = CalloutInboxPrefix.For(AppSlugText, token),
         });
         await client.ConnectAsync();
         Console.WriteLine("[note] connected and authorized (callout granted a NOTES-account user JWT).");

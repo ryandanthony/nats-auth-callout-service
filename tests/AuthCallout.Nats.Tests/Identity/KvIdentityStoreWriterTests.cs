@@ -4,6 +4,7 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using AuthCallout.Contracts.Config;
 using AuthCallout.Contracts.Seams;
 using AuthCallout.Nats.Identity;
 using NATS.Client.Core;
@@ -103,13 +104,14 @@ public sealed class KvIdentityStoreWriterTests
         var kvContext = ContextReturning(tokenStore, assertionStore);
         var signer = SignerReturning(new SignedAssertion("header.payload.sig", "kid-1"));
         var writer = new KvIdentityStoreWriter(kvContext, signer, Substitute.For<ISecretResolver>(), FixedTimeProvider());
-        // ADR 0013 key-safety transform: uppercase and unsafe chars get sanitized to lowercase/underscore.
+        // ADR 0013 key derivation: sanitized (lowercase/underscore) plus a 16-hex SHA-256
+        // suffix of the raw value, so sanitization aliases cannot collide across principals.
         var grant = IdentityTestBuilders.GrantFor("notes", propagationEnabled: true, selfLookupKey: "JTI.With Spaces", FixedNow.AddMinutes(5));
 
         await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
 
         await assertionStore.Received(1).TryCreateAsync(
-            "jti_with_spaces", "header.payload.sig", TimeSpan.FromMinutes(5), cancellationToken: Arg.Any<CancellationToken>());
+            AppSlug.DeriveKeySegment("JTI.With Spaces"), "header.payload.sig", TimeSpan.FromMinutes(5), cancellationToken: Arg.Any<CancellationToken>());
     }
 
     [Fact]

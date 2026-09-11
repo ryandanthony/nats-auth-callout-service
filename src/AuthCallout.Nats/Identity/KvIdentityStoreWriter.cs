@@ -103,7 +103,7 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
             var signed = _assertionSigner.Sign(claims);
 
             var assertionStore = await _kvContext.GetStoreAsync(slug.AssertionsBucket, cancellationToken).ConfigureAwait(false);
-            var assertionKey = AppSlug.SanitizeKeySegment(grant.SelfLookupKey);
+            var assertionKey = AppSlug.DeriveKeySegment(grant.SelfLookupKey);
             await CreateOrReplaceAsync(assertionStore, assertionKey, signed.CompactJwt, ttl, cancellationToken).ConfigureAwait(false);
 
             return new IdentityStoreWriteResult(Succeeded: true, ConnectionId: connectionId);

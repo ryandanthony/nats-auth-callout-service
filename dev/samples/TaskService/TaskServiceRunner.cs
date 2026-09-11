@@ -67,6 +67,11 @@ public static class TaskServiceRunner
             Url = natsUrl,
             Name = "task-sample",
             AuthOpts = new NatsAuthOpts { Token = token },
+
+            // The callout grants a scoped inbox (_INBOX.{slug}.{principal-key}.>), not the
+            // account-wide _INBOX.>; the connection must use the matching prefix or KV reads
+            // (and any request-reply) would be silently denied their reply subscription.
+            InboxPrefix = CalloutInboxPrefix.For(AppSlugText, token),
         });
         await client.ConnectAsync();
         Console.WriteLine("[task] connected and authorized (callout granted a TASKS-account user JWT, isolated from NOTES - ADR 0001).");
