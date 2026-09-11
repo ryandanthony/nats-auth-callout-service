@@ -27,7 +27,7 @@ public static class CalloutDiscovery
     /// hasn't been created yet; a real consumer needs the same short retry this sample
     /// does, not just a demo one-off.
     /// </summary>
-    private const int MaxAttempts = 10;
+    private const int MaxAttempts = 20;
 
     private static readonly TimeSpan RetryDelay = TimeSpan.FromMilliseconds(300);
 
