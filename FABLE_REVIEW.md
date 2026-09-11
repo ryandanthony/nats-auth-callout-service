@@ -109,7 +109,13 @@ subjects per backing stream — the reply leg is world-readable.
 **Fix options:** NATS supports custom inbox prefixes (`NatsOpts.InboxPrefix` in
 NATS.NET, `custom_inbox_prefix` in other clients). Grant
 `_INBOX_{connection-id}.>` (or `_INBOX.{safe-name}.>`) and document that
-propagation-consuming clients must set the matching inbox prefix. If that's
+propagation-consuming clients must set the matching inbox prefix. **The
+mitigation was itself validated live** on the same server: with each user
+granted only its own scoped prefix (e.g. `_INBOX_v.>`) and the client using
+`--inbox-prefix _INBOX_v`, request-reply worked normally
+(`Received with rtt 593µs`), while the attacker's subscriptions to both
+`_INBOX.>` and the victim's `_INBOX_v.>` were rejected with
+`Permissions Violation for Subscription`. If that's
 deemed too much client burden for v1, at minimum promote this from an ADR
 footnote to a loud, threat-model-level warning in the operations docs: "one
 account per application, and every authenticated user in an account can read
