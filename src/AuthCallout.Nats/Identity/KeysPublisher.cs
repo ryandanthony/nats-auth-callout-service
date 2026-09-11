@@ -54,8 +54,10 @@ public sealed class KeysPublisher
         // create-or-update rather than GetStoreAsync: this can run before (or independent
         // of) BucketProvisioner's own pass, and it must not assume the bucket already
         // exists (idempotent per the D16 create-or-update pattern this type shares with
-        // BucketProvisioner).
-        var store = await _kvContext.CreateOrUpdateStoreAsync(new NatsKVConfig(AppSlug.AssertionKeysBucket), cancellationToken).ConfigureAwait(false);
+        // BucketProvisioner). Uses BucketProvisioner.BucketConfig so the marker-TTL setting
+        // matches — a bare NatsKVConfig here would make the server reject the update of an
+        // already-provisioned bucket ("message TTL status can not be disabled").
+        var store = await _kvContext.CreateOrUpdateStoreAsync(BucketProvisioner.BucketConfig(AppSlug.AssertionKeysBucket), cancellationToken).ConfigureAwait(false);
 
         var desiredKids = new HashSet<string>(StringComparer.Ordinal);
         string? activeKid = null;

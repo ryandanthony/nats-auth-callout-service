@@ -30,6 +30,19 @@ public sealed class BucketProvisioner
     /// </summary>
     private static readonly TimeSpan MarkerRetention = TimeSpan.FromMinutes(1);
 
+    /// <summary>
+    /// Builds the canonical <see cref="NatsKVConfig"/> for a callout-owned bucket, with the
+    /// <see cref="MarkerRetention"/> <c>LimitMarkerTTL</c> that enables server-side per-message
+    /// TTL. Shared by <see cref="KeysPublisher"/> and <see cref="DiscoveryPublisher"/> so their
+    /// create-or-update calls agree with this provisioner's config — a bare <c>NatsKVConfig</c>
+    /// re-issued against an already-provisioned bucket makes the server reject the update
+    /// ("message TTL status can not be disabled"), so every create-or-update on these buckets
+    /// must pass the identical marker-TTL setting.
+    /// </summary>
+    /// <param name="bucket">The physical bucket name.</param>
+    /// <returns>The canonical KV config for that bucket.</returns>
+    internal static NatsKVConfig BucketConfig(string bucket) => new(bucket) { LimitMarkerTTL = MarkerRetention };
+
     private readonly INatsKVContext _kvContext;
     private readonly Action<string>? _onOrphanedBucket;
 
@@ -102,7 +115,7 @@ public sealed class BucketProvisioner
 
     private async Task CreateOrUpdateAsync(string bucket, CancellationToken cancellationToken)
     {
-        var config = new NatsKVConfig(bucket) { LimitMarkerTTL = MarkerRetention };
+        var config = BucketConfig(bucket);
         await _kvContext.CreateOrUpdateStoreAsync(config, cancellationToken).ConfigureAwait(false);
     }
 }

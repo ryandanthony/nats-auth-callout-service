@@ -65,7 +65,10 @@ public sealed class DiscoveryPublisher
             var descriptor = BuildDescriptor(slug.Value, enabled, slug, currentKid);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(descriptor, SerializerOptions);
 
-            var store = await _kvContext.CreateOrUpdateStoreAsync(new NatsKVConfig(slug.DiscoveryBucket), cancellationToken).ConfigureAwait(false);
+            // BucketProvisioner.BucketConfig so the marker-TTL setting matches the provisioner's
+            // (a bare NatsKVConfig re-issued against an already-provisioned bucket makes the
+            // server reject the update: "message TTL status can not be disabled").
+            var store = await _kvContext.CreateOrUpdateStoreAsync(BucketProvisioner.BucketConfig(slug.DiscoveryBucket), cancellationToken).ConfigureAwait(false);
             await store.PutAsync(AppSlug.DiscoveryDescriptorKey, bytes, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
     }
