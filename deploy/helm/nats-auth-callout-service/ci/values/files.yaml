@@ -22,7 +22,7 @@ source:
           match:
             azp: [notes-web]
           identityPropagation:
-            enabled: true
+            enabled: false
           profiles:
             - name: editor
               match:
