@@ -32,6 +32,33 @@ public sealed class AssertionSignerTests
     }
 
     [Fact]
+    public void Sign_PayloadWireFieldNames_MatchAdr0011SchemaVersionDiscipline()
+    {
+        // The payload's wire shape is an interop contract consumers implement from the
+        // docs (ADR 0011: "reuse the ADR 0008 schemaVersion discipline"; doc 09): the
+        // version field is exactly "schemaVersion", alongside id/sub/app/iss/exp. A
+        // C#-side property rename must never leak into the wire (S4: the payload
+        // serialized "payloadSchemaVersion", a field no doc mentions).
+        using var keyPair = KeyPair.CreatePair(PrefixByte.Account);
+        var keyset = new[] { new ResolvedAssertionKey("kid-a", keyPair.GetSeed(), Active: true) };
+        using var signer = new AssertionSigner(keyset);
+
+        var expiry = DateTimeOffset.UtcNow.AddMinutes(5);
+        var claims = new AssertionClaims("conn-1", "sub-1", "notes", "https://id.example.com", expiry);
+        var signed = signer.Sign(claims);
+
+        var payloadJson = System.Text.Encoding.UTF8.GetString(
+            System.Buffers.Text.Base64Url.DecodeFromChars(signed.CompactJwt.Split('.')[1]));
+        using var payload = System.Text.Json.JsonDocument.Parse(payloadJson);
+        var fields = payload.RootElement.EnumerateObject().Select(static p => p.Name).ToArray();
+
+        Assert.Equal(["schemaVersion", "id", "sub", "app", "iss", "exp"], fields);
+        Assert.Equal(1, payload.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal("conn-1", payload.RootElement.GetProperty("id").GetString());
+        Assert.Equal(expiry.ToUnixTimeSeconds(), payload.RootElement.GetProperty("exp").GetInt64());
+    }
+
+    [Fact]
     public void Sign_ThenVerify_WithPublicKey_RoundTripsClaims()
     {
         using var keyPair = KeyPair.CreatePair(PrefixByte.Account);

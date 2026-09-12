@@ -72,7 +72,7 @@ With UUID `jti`s this is unlikely by accident, but the `sub` fallback is attacke
 
 **Fix:** make the key collision-resistant instead of merely subject-safe — e.g. `sanitized + "_" + first-16-hex(SHA256(raw))` (the `TransformPipeline.Hash` helper already exists), applied identically in the grant subject and the write path (both already flow through `SanitizeKeySegment`, so it's a one-function change).
 
-### S4 (MEDIUM) — Assertion payload serializes `payloadSchemaVersion`, not the documented `schemaVersion`
+### S4 (MEDIUM) — Assertion payload serializes `payloadSchemaVersion`, not the documented `schemaVersion` — **FIXED** (`[JsonPropertyName("schemaVersion")]`; wire-shape test now pins the exact documented field order/names)
 
 `AssertionSigner`:
 
@@ -181,7 +181,7 @@ Several files are >60% comments (e.g. `EventSubjectResolver` is ~50 lines of XML
 ## 5. Suggested priority
 
 1. ~~**S1** — add the divergent-issuer-config validation rule~~ — **done** (red-to-green).
-2. **S4** — fix `schemaVersion` field name before any consumer exists (breaking later).
+2. ~~**S4** — fix `schemaVersion` field name~~ — **done** (red-to-green, wire shape pinned by test).
 3. ~~**S3** — collision-resistant self-lookup keys~~ — **done** (`d49162b`).
 4. ~~**S2** — per-connection inbox prefixes~~ — **done** (`d49162b`, scoped per-principal prefixes).
 5. **M1** — delete `IConnectionIdGenerator`.

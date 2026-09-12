@@ -7,6 +7,7 @@
 using System.Buffers.Text;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using AuthCallout.Contracts.Seams;
 using NATS.NKeys;
 
@@ -174,6 +175,19 @@ public sealed class AssertionSigner : IAssertionSigner, IDisposable
     /// <summary>The assertion's JWT header: <c>typ</c>, <c>alg</c>, and the signing key's <c>kid</c> (ADR 0011).</summary>
     private sealed record AssertionHeader(string Typ, string Alg, string Kid);
 
-    /// <summary>The assertion's JWT payload: exactly the ADR 0011 claim set plus <c>schemaVersion</c> (D20).</summary>
-    private sealed record AssertionPayload(int PayloadSchemaVersion, string Id, string Sub, string App, string Iss, long Exp);
+    /// <summary>
+    /// The assertion's JWT payload: exactly the ADR 0011 claim set plus <c>schemaVersion</c>
+    /// (D20). The version property carries an explicit <see cref="JsonPropertyName"/> because
+    /// the wire field is the documented interop contract, <c>schemaVersion</c> — the C#
+    /// property name is longer only to avoid colliding with the type-level
+    /// <see cref="SchemaVersion"/> constant, and that naming choice must never leak into the
+    /// serialized payload (S4).
+    /// </summary>
+    private sealed record AssertionPayload(
+        [property: JsonPropertyName("schemaVersion")] int PayloadSchemaVersion,
+        string Id,
+        string Sub,
+        string App,
+        string Iss,
+        long Exp);
 }
