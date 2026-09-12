@@ -10,7 +10,7 @@ Findings S1, S2, S3, S4 and the `Verify`-ignores-`exp` behavior were **empirical
 
 ## 1. Security findings
 
-### S1 (HIGH) — Stage-2 validation parameters come from `candidates[0]`, with no cross-app consistency check
+### S1 (HIGH) — Stage-2 validation parameters come from `candidates[0]`, with no cross-app consistency check — **FIXED** (`divergent-issuer-config` aggregate rule: apps sharing an authority must have structurally identical issuer blocks; red-to-green with 6 new validator tests)
 
 `ResolutionPipeline.ResolveTokenAsync`:
 
@@ -180,7 +180,7 @@ Several files are >60% comments (e.g. `EventSubjectResolver` is ~50 lines of XML
 
 ## 5. Suggested priority
 
-1. **S1** — add the divergent-issuer-config validation rule (small, closes a real bypass).
+1. ~~**S1** — add the divergent-issuer-config validation rule~~ — **done** (red-to-green).
 2. **S4** — fix `schemaVersion` field name before any consumer exists (breaking later).
 3. ~~**S3** — collision-resistant self-lookup keys~~ — **done** (`d49162b`).
 4. ~~**S2** — per-connection inbox prefixes~~ — **done** (`d49162b`, scoped per-principal prefixes).

@@ -40,7 +40,7 @@ Accepting an HMAC algorithm while trusting JWKS-published public keys enables al
 
 ### Placement
 
-These fields extend the existing per-issuer `issuer` block in the canonical model ([ADR 0007](./0007-internal-configuration-model.md)); they are not a new config section and not per-profile. All applications sharing an issuer get consistent validation.
+These fields extend the existing per-issuer `issuer` block in the canonical model ([ADR 0007](./0007-internal-configuration-model.md)); they are not a new config section and not per-profile. All applications sharing an issuer get consistent validation — **enforced at config load**: the aggregate validator's `divergent-issuer-config` rule rejects any config where two applications share an `authority` but differ in any issuer-block field (structural equality over the whole `IssuerConfig`). Validation runs once per token against the shared authority's parameters, so a divergent block would otherwise make effective strictness depend on candidate ordering.
 
 ### Config-load validation (fail closed, [ADR 0006](./0006-config-reload-and-failure-semantics.md))
 

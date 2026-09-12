@@ -101,6 +101,31 @@ internal static class RoutingConfigValidator
             }
 
             ValidateNoIndistinguishablePairs(candidates, group.Key, errors);
+            ValidateConsistentIssuerConfig(candidates, group.Key, errors);
+        }
+    }
+
+    /// <summary>
+    /// Applications sharing an issuer authority must carry <b>identical</b> issuer blocks
+    /// (ADR 0016): stage 2 validates a token once per request against the authority's shared
+    /// parameters (the resolution pipeline takes the first candidate's <see cref="IssuerConfig"/>),
+    /// so any divergence — <c>validateAudience</c>/<c>audience</c>, <c>clockSkew</c>,
+    /// <c>allowedAlgorithms</c>, <c>jwksUri</c>, cache/refresh settings — would make effective
+    /// validation strictness depend on candidate ordering: a token failing one app's audience
+    /// check could validate under a sibling's laxer parameters and then route to the strict
+    /// app at stage 3. Divergence is therefore a config-load error (fail closed), leaning on
+    /// <see cref="IssuerConfig"/>'s structural equality so every field is always covered.
+    /// </summary>
+    private static void ValidateConsistentIssuerConfig(Application[] candidates, string issuerAuthority, List<ValidationError> errors)
+    {
+        var reference = candidates[0];
+        foreach (var application in candidates.Skip(1).Where(a => !a.Issuer.Equals(reference.Issuer)))
+        {
+            var message =
+                $"Applications '{reference.Name}' and '{application.Name}' share issuer '{issuerAuthority}' but their issuer blocks differ; "
+                + "all applications on one authority must use identical issuer settings (validation runs once per token against the shared "
+                + "authority's parameters, ADR 0016), so a divergent block would make validation strictness depend on candidate ordering.";
+            errors.Add(new ValidationError("divergent-issuer-config", message));
         }
     }
 

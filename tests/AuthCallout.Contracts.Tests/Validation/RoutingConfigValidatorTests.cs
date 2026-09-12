@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------
 
 using AuthCallout.Contracts.Config;
+using AuthCallout.Contracts.Primitives;
 using AuthCallout.Contracts.Validation;
 
 namespace AuthCallout.Contracts.Tests.Validation;
@@ -107,6 +108,87 @@ public sealed class RoutingConfigValidatorTests
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, e => string.Equals(e.Code, "indistinguishable-applications", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TwoApplicationsSharingIssuer_WithDivergentValidationParameters_Rejected()
+    {
+        // Stage 2 validates once per request using the shared authority's parameters
+        // (ResolutionPipeline takes candidates[0].Issuer), so two apps on one authority
+        // with different validation-relevant settings would make effective strictness
+        // depend on candidate ordering: a token failing app-a's audience check could
+        // validate under app-b's laxer parameters and then route to app-a at stage 3.
+        // The aggregate must therefore reject any divergence (fail closed at config load).
+        var strict = TestBuilders.ValidIssuer("https://shared.example.com");
+        var lax = strict with { ValidateAudience = false, Audience = null };
+        var app1 = TestBuilders.ValidApplication(
+            name: "app-a",
+            issuer: strict,
+            match: new ClaimMatch(new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal) { ["azp"] = ["client-a"] }));
+        var app2 = TestBuilders.ValidApplication(
+            name: "app-b",
+            issuer: lax,
+            match: new ClaimMatch(new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal) { ["azp"] = ["client-b"] }));
+        var routing = new RoutingConfig([app1, app2]);
+
+        var result = ConfigValidator.ValidateRouting(routing);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => string.Equals(e.Code, "divergent-issuer-config", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("clockSkew")]
+    [InlineData("allowedAlgorithms")]
+    [InlineData("jwksUri")]
+    [InlineData("audience")]
+    public void TwoApplicationsSharingIssuer_AnySingleDivergentIssuerField_Rejected(string divergentField)
+    {
+        var baseline = TestBuilders.ValidIssuer("https://shared.example.com");
+        var divergent = divergentField switch
+        {
+            "clockSkew" => baseline with { ClockSkew = DurationString.Parse("120s") },
+            "allowedAlgorithms" => baseline with { AllowedAlgorithms = ["RS256", "ES256"] },
+            "jwksUri" => baseline with { JwksUri = "https://shared.example.com/other/jwks" },
+            "audience" => baseline with { Audience = ["nats", "other"] },
+            _ => throw new ArgumentOutOfRangeException(nameof(divergentField)),
+        };
+        var app1 = TestBuilders.ValidApplication(
+            name: "app-a",
+            issuer: baseline,
+            match: new ClaimMatch(new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal) { ["azp"] = ["client-a"] }));
+        var app2 = TestBuilders.ValidApplication(
+            name: "app-b",
+            issuer: divergent,
+            match: new ClaimMatch(new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal) { ["azp"] = ["client-b"] }));
+        var routing = new RoutingConfig([app1, app2]);
+
+        var result = ConfigValidator.ValidateRouting(routing);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => string.Equals(e.Code, "divergent-issuer-config", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TwoApplicationsSharingIssuer_WithIdenticalIssuerConfig_NotRejectedForDivergence()
+    {
+        // Identical issuer blocks (the supported multi-app-per-authority shape) must not
+        // trip the divergence rule; distinct matches keep the pair distinguishable.
+        var issuer = TestBuilders.ValidIssuer("https://shared.example.com");
+        var app1 = TestBuilders.ValidApplication(
+            name: "app-a",
+            issuer: issuer,
+            match: new ClaimMatch(new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal) { ["azp"] = ["client-a"] }));
+        var app2 = TestBuilders.ValidApplication(
+            name: "app-b",
+            issuer: issuer,
+            match: new ClaimMatch(new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal) { ["azp"] = ["client-b"] }));
+        var routing = new RoutingConfig([app1, app2]);
+
+        var result = ConfigValidator.ValidateRouting(routing);
+
+        Assert.True(result.IsValid);
+        Assert.DoesNotContain(result.Errors, e => string.Equals(e.Code, "divergent-issuer-config", StringComparison.Ordinal));
     }
 
     [Fact]
