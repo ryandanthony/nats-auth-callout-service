@@ -51,8 +51,8 @@ public sealed class MigrationRunner
     {
         ArgumentNullException.ThrowIfNull(connection);
 
-        await EnsureMigrationsTableAsync(connection, cancellationToken).ConfigureAwait(false);
-        var alreadyApplied = await LoadAppliedFilenamesAsync(connection, cancellationToken).ConfigureAwait(false);
+        await EnsureMigrationsTableAsync(connection, cancellationToken);
+        var alreadyApplied = await LoadAppliedFilenamesAsync(connection, cancellationToken);
 
         var applied = new List<string>();
         foreach (var migration in _migrations.OrderedMigrations)
@@ -62,7 +62,7 @@ public sealed class MigrationRunner
                 continue;
             }
 
-            await ApplyOneAsync(connection, migration, cancellationToken).ConfigureAwait(false);
+            await ApplyOneAsync(connection, migration, cancellationToken);
             applied.Add(migration.Filename);
         }
 
@@ -72,15 +72,15 @@ public sealed class MigrationRunner
     private static async Task EnsureMigrationsTableAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand(SchemaMigrationsTableSql, connection);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<HashSet<string>> LoadAppliedFilenamesAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
         var applied = new HashSet<string>(StringComparer.Ordinal);
         await using var command = new NpgsqlCommand("SELECT filename FROM schema_migrations;", connection);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
         {
             applied.Add(reader.GetString(0));
         }
@@ -90,7 +90,7 @@ public sealed class MigrationRunner
 
     private static async Task ApplyOneAsync(NpgsqlConnection connection, EmbeddedMigration migration, CancellationToken cancellationToken)
     {
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         try
         {
             // migration.Sql is a build-time-embedded resource under this packet's own control
@@ -101,21 +101,21 @@ public sealed class MigrationRunner
             await using (var migrationCommand = new NpgsqlCommand(migration.Sql, connection, transaction))
 #pragma warning restore CA2100
             {
-                await migrationCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                await migrationCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
             await using (var recordCommand = new NpgsqlCommand(
                 "INSERT INTO schema_migrations (filename) VALUES (@filename) ON CONFLICT (filename) DO NOTHING;", connection, transaction))
             {
                 recordCommand.Parameters.AddWithValue("filename", migration.Filename);
-                await recordCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                await recordCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken);
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.RollbackAsync(cancellationToken);
             throw;
         }
     }

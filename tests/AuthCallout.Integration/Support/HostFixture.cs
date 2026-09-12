@@ -107,9 +107,9 @@ public sealed class HostFixture : IAsyncDisposable
         var bootstrap = BuildBootstrap(anonymous, assertionKey);
         var activeConfigSource = new StaticActiveConfigSource(new ActiveConfig(bootstrap, new RoutingConfig(applications), Version: 1));
 
-        var pipeline = await BuildPipelineAsync(nats, keycloakCertificatePem, bootstrap, activeConfigSource, cancellationToken).ConfigureAwait(false);
-        var connection = await ConnectAsync(nats, cancellationToken).ConfigureAwait(false);
-        var identity = await BuildIdentityStoreAsync(connection, activeConfigSource, assertionKey, cancellationToken).ConfigureAwait(false);
+        var pipeline = await BuildPipelineAsync(nats, keycloakCertificatePem, bootstrap, activeConfigSource, cancellationToken);
+        var connection = await ConnectAsync(nats, cancellationToken);
+        var identity = await BuildIdentityStoreAsync(connection, activeConfigSource, assertionKey, cancellationToken);
 
         var eventEmitter = new EventEmitter(connection, activeConfigSource);
         var responderDependencies = new CalloutResponderDependencies(
@@ -125,11 +125,11 @@ public sealed class HostFixture : IAsyncDisposable
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
-        await _cts.CancelAsync().ConfigureAwait(false);
+        await _cts.CancelAsync();
 #pragma warning disable VSTHRD003 // _runTask was started by this same instance in its constructor; awaiting it here is the intended join point, mirroring NatsConnectionManager's own equivalent suppression.
         try
         {
-            await _runTask.ConfigureAwait(false);
+            await _runTask;
         }
         catch (OperationCanceledException)
         {
@@ -142,7 +142,7 @@ public sealed class HostFixture : IAsyncDisposable
         _minter.Dispose();
         (_crypto as IDisposable)?.Dispose();
         _assertionSigner.Dispose();
-        await _connection.DisposeAsync().ConfigureAwait(false);
+        await _connection.DisposeAsync();
         _cts.Dispose();
     }
 
@@ -152,7 +152,7 @@ public sealed class HostFixture : IAsyncDisposable
         var jwksHttpClient = TrustedHttpClientFactory.Create(keycloakCertificatePem);
         var fetcherFactory = new IssuerConfigurationManagerFactory(jwksHttpClient);
         var jwksCacheManager = new JwksCacheManager(activeConfigSource, bootstrap.Jwks, fetcherFactory);
-        await jwksCacheManager.PrewarmAllAsync(cancellationToken).ConfigureAwait(false);
+        await jwksCacheManager.PrewarmAllAsync(cancellationToken);
 
         var tokenValidator = new TokenValidator(jwksCacheManager, jwksCacheManager);
         var resolutionPipeline = new ResolutionPipeline(tokenValidator);
@@ -170,7 +170,7 @@ public sealed class HostFixture : IAsyncDisposable
             Name = "auth-callout-integration",
             AuthOpts = new NatsAuthOpts { Seed = nats.ServiceUserKey.Seed, NKey = nats.ServiceUserKey.PublicKey },
         });
-        await connection.ConnectAsync().AsTask().WaitAsync(cancellationToken).ConfigureAwait(false);
+        await connection.ConnectAsync().AsTask().WaitAsync(cancellationToken);
         return connection;
     }
 
@@ -181,8 +181,8 @@ public sealed class HostFixture : IAsyncDisposable
         INatsKVContext kvContext = connection.CreateKeyValueStoreContext();
         var writer = new KvIdentityStoreWriter(kvContext, assertionSigner, new InlineSecretResolver(assertionKey.Seed));
 
-        await writer.ProvisionBucketsAsync(activeConfigSource.Current!.Routing, cancellationToken).ConfigureAwait(false);
-        await writer.PublishKeysAndDiscoveryAsync(activeConfigSource.Current, cancellationToken).ConfigureAwait(false);
+        await writer.ProvisionBucketsAsync(activeConfigSource.Current!.Routing, cancellationToken);
+        await writer.PublishKeysAndDiscoveryAsync(activeConfigSource.Current, cancellationToken);
 
         return new IdentityParts(assertionSigner, writer);
     }

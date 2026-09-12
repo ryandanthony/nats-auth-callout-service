@@ -50,7 +50,7 @@ public static class ConfigApplyLoopFactory
     private static async Task OnAppliedAsync(ComponentGraphResult components, ActiveConfig snapshot, CancellationToken cancellationToken)
     {
         components.Metrics.ConfigReloadsApplied.Add(1);
-        await components.IdentityStoreWriter.ProvisionBucketsAsync(snapshot.Routing, cancellationToken).ConfigureAwait(false);
-        await components.IdentityStoreWriter.PublishKeysAndDiscoveryAsync(snapshot, cancellationToken).ConfigureAwait(false);
+        await components.IdentityStoreWriter.ProvisionBucketsAsync(snapshot.Routing, cancellationToken);
+        await components.IdentityStoreWriter.PublishKeysAndDiscoveryAsync(snapshot, cancellationToken);
     }
 }

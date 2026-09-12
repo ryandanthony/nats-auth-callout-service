@@ -49,7 +49,7 @@ public static class NoteSubscriber
                 continue;
             }
 
-            var verified = await resolver.VerifyAsync(assertionValues.ToString()).ConfigureAwait(false);
+            var verified = await resolver.VerifyAsync(assertionValues.ToString());
             if (verified is null)
             {
                 Console.WriteLine("[note] subscriber: identity assertion failed verification; treating message as unverified.");
@@ -58,7 +58,7 @@ public static class NoteSubscriber
 
             Console.WriteLine($"[note] subscriber: verified identity id={verified.Id} sub={verified.Subject}");
 
-            var rawToken = await resolver.ResolveOidcTokenAsync(verified.Id).ConfigureAwait(false);
+            var rawToken = await resolver.ResolveOidcTokenAsync(verified.Id);
             var preferredUsername = OidcTokenClaims.ReadClaim(rawToken, "preferred_username");
             Console.WriteLine($"[note] subscriber: resolved caller's OIDC token, preferred_username={preferredUsername}");
         }

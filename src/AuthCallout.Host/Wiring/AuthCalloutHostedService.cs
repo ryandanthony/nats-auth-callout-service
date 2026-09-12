@@ -65,12 +65,12 @@ public sealed class AuthCalloutHostedService : IHostedService, IDisposable
         _deps.Logger.LogInformation("Graceful shutdown starting (doc 05 Stopping).");
         _deps.StateMachine.BeginStopping();
 
-        await _runCts.CancelAsync().ConfigureAwait(false);
+        await _runCts.CancelAsync();
 
 #pragma warning disable VSTHRD003 // _backgroundTask was already started by this instance in StartAsync; awaiting it here is the intended join point, not a foreign/unstarted task.
         try
         {
-            await _backgroundTask.ConfigureAwait(false);
+            await _backgroundTask;
         }
         catch (OperationCanceledException)
         {
@@ -78,8 +78,8 @@ public sealed class AuthCalloutHostedService : IHostedService, IDisposable
         }
 #pragma warning restore VSTHRD003
 
-        await _deps.ConnectionManager.DisposeAsync().ConfigureAwait(false);
-        await _deps.RoutingProvider.DisposeAsync().ConfigureAwait(false);
+        await _deps.ConnectionManager.DisposeAsync();
+        await _deps.RoutingProvider.DisposeAsync();
     }
 
     /// <inheritdoc />
@@ -101,21 +101,21 @@ public sealed class AuthCalloutHostedService : IHostedService, IDisposable
 
         try
         {
-            await WaitForFirstConfigDecisionAsync(cancellationToken).ConfigureAwait(false);
+            await WaitForFirstConfigDecisionAsync(cancellationToken);
             _deps.StartupHealthCheck.MarkStarted();
 
-            await WaitForValidConfigAsync(cancellationToken).ConfigureAwait(false);
+            await WaitForValidConfigAsync(cancellationToken);
 
             if (_deps.PrewarmRequired)
             {
                 _deps.Logger.LogInformation("Prewarming JWKS for every configured issuer before Serving (doc 08).");
-                await _deps.JwksCacheManager.PrewarmAllAsync(cancellationToken).ConfigureAwait(false);
+                await _deps.JwksCacheManager.PrewarmAllAsync(cancellationToken);
             }
 
             _deps.StateMachine.SetPrewarmComplete();
 
             _deps.Logger.LogInformation("Connecting to NATS as the callout's own service-user connection.");
-            await _deps.ConnectionManager.StartAsync(cancellationToken).ConfigureAwait(false);
+            await _deps.ConnectionManager.StartAsync(cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -125,7 +125,7 @@ public sealed class AuthCalloutHostedService : IHostedService, IDisposable
 #pragma warning disable VSTHRD003 // configApplyTask was started by this same method, just above; awaiting it here is the intended join point.
         try
         {
-            await configApplyTask.ConfigureAwait(false);
+            await configApplyTask;
         }
         catch (OperationCanceledException)
         {
@@ -138,7 +138,7 @@ public sealed class AuthCalloutHostedService : IHostedService, IDisposable
     {
         try
         {
-            await _deps.ConfigApplyLoop.RunAsync(cancellationToken).ConfigureAwait(false);
+            await _deps.ConfigApplyLoop.RunAsync(cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -170,7 +170,7 @@ public sealed class AuthCalloutHostedService : IHostedService, IDisposable
                 return;
             }
 
-            await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await tcs.Task.WaitAsync(cancellationToken);
         }
         finally
         {
@@ -194,7 +194,7 @@ public sealed class AuthCalloutHostedService : IHostedService, IDisposable
                 return;
             }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
         }
     }
 }

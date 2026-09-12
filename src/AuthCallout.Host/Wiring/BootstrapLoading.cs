@@ -30,7 +30,7 @@ public static class BootstrapLoading
         var mapResult = BootstrapConfigLoader.Load(bootstrapPath);
         if (!mapResult.Succeeded)
         {
-            await Console.Error.WriteLineAsync($"FATAL: bootstrap file '{bootstrapPath}' failed to load: {mapResult.Error}").ConfigureAwait(false);
+            await Console.Error.WriteLineAsync($"FATAL: bootstrap file '{bootstrapPath}' failed to load: {mapResult.Error}");
             return null;
         }
 
@@ -42,7 +42,7 @@ public static class BootstrapLoading
         }
 
         var reason = string.Join("; ", validation.Errors.Select(static e => $"{e.Code}: {e.Message}"));
-        await Console.Error.WriteLineAsync($"FATAL: bootstrap file '{bootstrapPath}' is invalid: {reason}").ConfigureAwait(false);
+        await Console.Error.WriteLineAsync($"FATAL: bootstrap file '{bootstrapPath}' is invalid: {reason}");
         return null;
     }
 }

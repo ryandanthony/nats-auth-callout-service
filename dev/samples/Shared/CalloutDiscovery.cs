@@ -45,15 +45,15 @@ public static class CalloutDiscovery
         {
             try
             {
-                var bucket = await kv.GetStoreAsync(slug.DiscoveryBucket).ConfigureAwait(false);
-                var entry = await bucket.GetEntryAsync<byte[]>(AppSlug.DiscoveryDescriptorKey).ConfigureAwait(false);
+                var bucket = await kv.GetStoreAsync(slug.DiscoveryBucket);
+                var entry = await bucket.GetEntryAsync<byte[]>(AppSlug.DiscoveryDescriptorKey);
                 return DiscoveryDescriptor.Parse(entry.Value!);
             }
             catch (Exception) when (attempt < MaxAttempts)
             {
                 // Bucket/entry not provisioned yet (see MaxAttempts' doc comment); retry with
                 // a short fixed delay rather than surfacing a demo-breaking race.
-                await Task.Delay(RetryDelay).ConfigureAwait(false);
+                await Task.Delay(RetryDelay);
             }
         }
 

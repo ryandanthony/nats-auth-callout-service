@@ -289,7 +289,7 @@ public sealed class CalloutResponderTests
                 var token = ci.Arg<CancellationToken>();
                 if (string.Equals(request.UserNKey, "HANG", StringComparison.Ordinal))
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(10), token).ConfigureAwait(false);
+                    await Task.Delay(TimeSpan.FromSeconds(10), token);
                     return (Decision)CalloutTestBuilders.Granted();
                 }
 
@@ -325,7 +325,7 @@ public sealed class CalloutResponderTests
                 var observed = Interlocked.Increment(ref currentConcurrency);
                 InterlockedMax(ref maxObservedConcurrency, observed);
 
-                await release.WaitAsync(ci.Arg<CancellationToken>()).ConfigureAwait(false);
+                await release.WaitAsync(ci.Arg<CancellationToken>());
 
                 Interlocked.Decrement(ref currentConcurrency);
 

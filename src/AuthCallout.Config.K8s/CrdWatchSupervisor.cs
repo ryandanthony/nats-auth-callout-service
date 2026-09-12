@@ -65,7 +65,7 @@ internal sealed class CrdWatchSupervisor
             using var cycleCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cycleCts.CancelAfter(_reconcileInterval);
 
-            var succeeded = await TryListAndWatchAsync(onResync, onChange, cycleCts.Token, cancellationToken).ConfigureAwait(false);
+            var succeeded = await TryListAndWatchAsync(onResync, onChange, cycleCts.Token, cancellationToken);
             if (cancellationToken.IsCancellationRequested)
             {
                 return;
@@ -73,7 +73,7 @@ internal sealed class CrdWatchSupervisor
 
             backoff = succeeded
                 ? _minBackoff
-                : await DelayAndDoubleBackoffAsync(backoff, cancellationToken).ConfigureAwait(false);
+                : await DelayAndDoubleBackoffAsync(backoff, cancellationToken);
         }
     }
 
@@ -92,7 +92,7 @@ internal sealed class CrdWatchSupervisor
         CrdListResult list;
         try
         {
-            list = await _client.ListAsync(cycleToken).ConfigureAwait(false);
+            list = await _client.ListAsync(cycleToken);
         }
         catch (OperationCanceledException) when (!outerToken.IsCancellationRequested)
         {
@@ -109,7 +109,7 @@ internal sealed class CrdWatchSupervisor
 
         try
         {
-            await foreach (var changeEvent in _client.WatchAsync(list.ResourceVersion, cycleToken).ConfigureAwait(false))
+            await foreach (var changeEvent in _client.WatchAsync(list.ResourceVersion, cycleToken))
             {
                 onChange(changeEvent);
             }
@@ -140,7 +140,7 @@ internal sealed class CrdWatchSupervisor
     {
         try
         {
-            await Task.Delay(backoff, token).ConfigureAwait(false);
+            await Task.Delay(backoff, token);
         }
         catch (OperationCanceledException)
         {

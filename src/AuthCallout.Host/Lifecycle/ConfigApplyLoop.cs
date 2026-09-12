@@ -83,12 +83,12 @@ public sealed class ConfigApplyLoop
     {
         var stalenessTask = RunStalenessClockAsync(cancellationToken);
         var watchTask = RunWatchAsync(cancellationToken);
-        await Task.WhenAll(stalenessTask, watchTask).ConfigureAwait(false);
+        await Task.WhenAll(stalenessTask, watchTask);
     }
 
     private async Task RunWatchAsync(CancellationToken cancellationToken)
     {
-        await foreach (var batch in _provider.WatchAsync(cancellationToken).ConfigureAwait(false))
+        await foreach (var batch in _provider.WatchAsync(cancellationToken))
         {
             ApplyOrReject(batch);
         }
@@ -133,7 +133,7 @@ public sealed class ConfigApplyLoop
     {
         try
         {
-            await onApplied(snapshot, CancellationToken.None).ConfigureAwait(false);
+            await onApplied(snapshot, CancellationToken.None);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -148,7 +148,7 @@ public sealed class ConfigApplyLoop
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1), _timeProvider);
         try
         {
-            while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
+            while (await timer.WaitForNextTickAsync(cancellationToken))
             {
                 UpdateFreshness();
             }

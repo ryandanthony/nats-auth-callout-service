@@ -30,14 +30,14 @@ public static class BootstrapSecrets
         ArgumentNullException.ThrowIfNull(bootstrap);
         ArgumentNullException.ThrowIfNull(secretResolver);
 
-        var issuerSeed = await RevealAsync(bootstrap.IssuerSeed, secretResolver, cancellationToken).ConfigureAwait(false);
+        var issuerSeed = await RevealAsync(bootstrap.IssuerSeed, secretResolver, cancellationToken);
         var serviceUserSeed = bootstrap.ServiceUserSeed is { } serviceUserSeedRef
-            ? await RevealAsync(serviceUserSeedRef, secretResolver, cancellationToken).ConfigureAwait(false)
+            ? await RevealAsync(serviceUserSeedRef, secretResolver, cancellationToken)
             : null;
         var xkeySeed = bootstrap.XkeySeed is { } xkeySeedRef
-            ? await RevealAsync(xkeySeedRef, secretResolver, cancellationToken).ConfigureAwait(false)
+            ? await RevealAsync(xkeySeedRef, secretResolver, cancellationToken)
             : null;
-        var assertionKeys = await ResolveAssertionKeysAsync(bootstrap.AssertionKeys, secretResolver, cancellationToken).ConfigureAwait(false);
+        var assertionKeys = await ResolveAssertionKeysAsync(bootstrap.AssertionKeys, secretResolver, cancellationToken);
 
         return new ResolvedBootstrapSecrets(issuerSeed, serviceUserSeed, xkeySeed, assertionKeys);
     }
@@ -53,7 +53,7 @@ public static class BootstrapSecrets
         var resolved = new List<ResolvedAssertionKey>(assertionKeys.Count);
         foreach (var key in assertionKeys)
         {
-            var seed = await RevealAsync(key.Key, secretResolver, cancellationToken).ConfigureAwait(false);
+            var seed = await RevealAsync(key.Key, secretResolver, cancellationToken);
             resolved.Add(new ResolvedAssertionKey(key.Kid, seed, key.Active));
         }
 
@@ -63,7 +63,7 @@ public static class BootstrapSecrets
     private static async Task<string> RevealAsync(
         Contracts.Primitives.SecretRef secretRef, ISecretResolver secretResolver, CancellationToken cancellationToken)
     {
-        using var resolved = await secretResolver.ResolveAsync(secretRef, cancellationToken).ConfigureAwait(false);
+        using var resolved = await secretResolver.ResolveAsync(secretRef, cancellationToken);
         return resolved.Reveal();
     }
 }

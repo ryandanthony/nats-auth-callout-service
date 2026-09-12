@@ -45,9 +45,9 @@ public static class DevOidcTokenFetcher
             ["grant_type"] = "password",
         });
 
-        using var response = await http.PostAsync(new Uri(tokenEndpoint), body, cancellationToken).ConfigureAwait(false);
+        using var response = await http.PostAsync(new Uri(tokenEndpoint), body, cancellationToken);
         response.EnsureSuccessStatusCode();
-        var payload = await response.Content.ReadFromJsonAsync<TokenResponse>(cancellationToken).ConfigureAwait(false);
+        var payload = await response.Content.ReadFromJsonAsync<TokenResponse>(cancellationToken);
         return payload?.AccessToken ?? throw new InvalidOperationException($"Token response from '{tokenEndpoint}' carried no access_token.");
     }
 

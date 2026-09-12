@@ -80,7 +80,7 @@ public sealed class EventEmitter : IEventEmitter
 
         try
         {
-            await _connection.PublishAsync(subject, bytes, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await _connection.PublishAsync(subject, bytes, cancellationToken: cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

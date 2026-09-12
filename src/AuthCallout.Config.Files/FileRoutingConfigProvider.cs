@@ -136,14 +136,14 @@ public sealed class FileRoutingConfigProvider : IRoutingConfigProvider
 
         try
         {
-            await foreach (var batch in ConsumeScansAsync(scanTrigger, token).ConfigureAwait(false))
+            await foreach (var batch in ConsumeScansAsync(scanTrigger, token))
             {
                 yield return batch;
             }
         }
         finally
         {
-            await StopWatcherSupervisorAsync(watcherSupervisorTask).ConfigureAwait(false);
+            await StopWatcherSupervisorAsync(watcherSupervisorTask);
         }
     }
 
@@ -156,7 +156,7 @@ public sealed class FileRoutingConfigProvider : IRoutingConfigProvider
         }
 
         _disposed = true;
-        await _disposalCts.CancelAsync().ConfigureAwait(false);
+        await _disposalCts.CancelAsync();
         _disposalCts.Dispose();
     }
 
@@ -164,7 +164,7 @@ public sealed class FileRoutingConfigProvider : IRoutingConfigProvider
     {
         while (true)
         {
-            var signalled = await scanTrigger.WaitAsync(token).ConfigureAwait(false);
+            var signalled = await scanTrigger.WaitAsync(token);
             if (!signalled)
             {
                 yield break;
@@ -199,7 +199,7 @@ public sealed class FileRoutingConfigProvider : IRoutingConfigProvider
         try
         {
 #pragma warning disable VSTHRD003 // supervisorTask was already started (and is running) by the caller before being passed in here; awaiting it is the intended join point, not a foreign/unstarted task.
-            await supervisorTask.ConfigureAwait(false);
+            await supervisorTask;
 #pragma warning restore VSTHRD003
         }
         catch (OperationCanceledException)

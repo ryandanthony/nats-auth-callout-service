@@ -27,8 +27,8 @@ public static class TokenFetcher
         using var client = TrustedHttpClientFactory.Create(trustedCertificatePem);
         var tokenUrl = $"{baseAddress}/realms/{realm}/protocol/openid-connect/token";
         using var content = new FormUrlEncodedContent(formFields);
-        using var response = await client.PostAsync(new Uri(tokenUrl), content).ConfigureAwait(false);
-        var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        using var response = await client.PostAsync(new Uri(tokenUrl), content);
+        var body = await response.Content.ReadAsStringAsync();
 
         if (!response.IsSuccessStatusCode)
         {

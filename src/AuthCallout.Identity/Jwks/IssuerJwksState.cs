@@ -84,7 +84,7 @@ internal sealed class IssuerJwksState
     {
         try
         {
-            var configuration = await _fetcher.FetchAsync(cancellationToken).ConfigureAwait(false);
+            var configuration = await _fetcher.FetchAsync(cancellationToken);
             _cachedSigningKeys = [.. configuration.SigningKeys];
             _hasEverSucceeded = true;
             _lastRefreshSucceeded = true;

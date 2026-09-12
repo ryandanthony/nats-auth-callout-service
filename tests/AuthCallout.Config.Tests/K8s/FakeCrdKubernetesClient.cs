@@ -87,7 +87,7 @@ public sealed class FakeCrdKubernetesClient : ICrdKubernetesClient
             channel = _currentWatchChannel ?? throw new InvalidOperationException("WatchAsync called before ListAsync.");
         }
 
-        await foreach (var item in channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in channel.Reader.ReadAllAsync(cancellationToken))
         {
             yield return item;
         }

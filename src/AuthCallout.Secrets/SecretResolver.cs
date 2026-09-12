@@ -108,7 +108,7 @@ public sealed class SecretResolver : ISecretResolver
         string raw;
         try
         {
-            raw = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+            raw = await File.ReadAllTextAsync(path, cancellationToken);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {
@@ -133,7 +133,7 @@ public sealed class SecretResolver : ISecretResolver
         string raw;
         try
         {
-            raw = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+            raw = await File.ReadAllTextAsync(path, cancellationToken);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {

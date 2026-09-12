@@ -60,7 +60,7 @@ internal sealed class ScanTrigger : IDisposable
     {
         try
         {
-            await _signal.WaitAsync(token).ConfigureAwait(false);
+            await _signal.WaitAsync(token);
             return true;
         }
         catch (OperationCanceledException)

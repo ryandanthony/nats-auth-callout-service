@@ -33,10 +33,9 @@ public static class NotePublisher
         for (var i = 1; i <= NoteServiceRunner.PublishCount; i++)
         {
             var headers = assertionCompactJwt is not null ? new NatsHeaders { { headerName, assertionCompactJwt } } : null;
-            await client.Connection.PublishAsync(NoteServiceRunner.Subject, $"note #{i} from the sample publisher", headers: headers, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            await client.Connection.PublishAsync(NoteServiceRunner.Subject, $"note #{i} from the sample publisher", headers: headers, cancellationToken: cancellationToken);
             Console.WriteLine($"[note] published note #{i}" + (headers is null ? " (no identity header, propagation disabled)" : " with Callout-Identity header"));
-            await Task.Delay(PublishDelay, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(PublishDelay, cancellationToken);
         }
     }
 }

@@ -60,7 +60,7 @@ public sealed class TokenValidator : ITokenValidator
             // No usable JWKS cached at all yet for this issuer: try one refresh before
             // giving up, rather than letting Microsoft.IdentityModel's "zero keys" message
             // masquerade as an ordinary signature failure.
-            await _jwksCacheManager.RefreshAsync(issuer.Authority, cancellationToken).ConfigureAwait(false);
+            await _jwksCacheManager.RefreshAsync(issuer.Authority, cancellationToken);
             signingKeys = _keyProvider.GetSigningKeys(issuer.Authority);
             if (signingKeys.Count == 0)
             {
@@ -69,17 +69,17 @@ public sealed class TokenValidator : ITokenValidator
         }
 
         var parameters = BuildValidationParameters(issuer, signingKeys);
-        var result = await ValidateOnceAsync(rawToken, parameters, cancellationToken).ConfigureAwait(false);
+        var result = await ValidateOnceAsync(rawToken, parameters, cancellationToken);
 
         if (!result.IsValid && IsUnknownKidFailure(result))
         {
             // doc 08 / ADR 0016: an unknown kid triggers a single-flight refresh, then one retry.
-            await _jwksCacheManager.RefreshAsync(issuer.Authority, cancellationToken).ConfigureAwait(false);
+            await _jwksCacheManager.RefreshAsync(issuer.Authority, cancellationToken);
             var refreshedKeys = _keyProvider.GetSigningKeys(issuer.Authority);
             if (refreshedKeys.Count > 0)
             {
                 var retryParameters = BuildValidationParameters(issuer, refreshedKeys);
-                result = await ValidateOnceAsync(rawToken, retryParameters, cancellationToken).ConfigureAwait(false);
+                result = await ValidateOnceAsync(rawToken, retryParameters, cancellationToken);
             }
         }
 
@@ -128,7 +128,7 @@ public sealed class TokenValidator : ITokenValidator
     {
         try
         {
-            return await Handler.ValidateTokenAsync(rawToken, parameters).WaitAsync(cancellationToken).ConfigureAwait(false);
+            return await Handler.ValidateTokenAsync(rawToken, parameters).WaitAsync(cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

@@ -87,15 +87,15 @@ public static class TaskServiceRunner
         using var runCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var subscriberReady = new TaskCompletionSource();
         var subscriberTask = Task.Run(() => RunSubscriberAsync(client, kv, descriptor, subscriberReady, runCts.Token), runCts.Token);
-        await subscriberReady.Task.WaitAsync(runCts.Token).ConfigureAwait(false);
+        await subscriberReady.Task.WaitAsync(runCts.Token);
 
         await PublishDemoTasksAsync(client, descriptor, assertion, runCts.Token);
 
-        await Task.Delay(TimeSpan.FromSeconds(2), CancellationToken.None).ConfigureAwait(false);
+        await Task.Delay(TimeSpan.FromSeconds(2), CancellationToken.None);
         await runCts.CancelAsync();
         try
         {
-            await subscriberTask.ConfigureAwait(false);
+            await subscriberTask;
         }
         catch (OperationCanceledException)
         {
@@ -111,10 +111,9 @@ public static class TaskServiceRunner
         for (var i = 1; i <= PublishCount; i++)
         {
             var headers = assertionCompactJwt is not null ? new NatsHeaders { { headerName, assertionCompactJwt } } : null;
-            await client.Connection.PublishAsync(Subject, $"task #{i} from the sample publisher", headers: headers, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            await client.Connection.PublishAsync(Subject, $"task #{i} from the sample publisher", headers: headers, cancellationToken: cancellationToken);
             Console.WriteLine($"[task] published task #{i}" + (headers is null ? " (no identity header)" : " with Callout-Identity header"));
-            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
         }
     }
 
@@ -139,7 +138,7 @@ public static class TaskServiceRunner
                 continue;
             }
 
-            var verified = await resolver.VerifyAsync(assertionValues.ToString()).ConfigureAwait(false);
+            var verified = await resolver.VerifyAsync(assertionValues.ToString());
             if (verified is null)
             {
                 Console.WriteLine("[task] subscriber: identity assertion failed verification.");
@@ -148,7 +147,7 @@ public static class TaskServiceRunner
 
             Console.WriteLine($"[task] subscriber: verified identity id={verified.Id} sub={verified.Subject} app={verified.Application}");
 
-            var rawToken = await resolver.ResolveOidcTokenAsync(verified.Id).ConfigureAwait(false);
+            var rawToken = await resolver.ResolveOidcTokenAsync(verified.Id);
             var preferredUsername = OidcTokenClaims.ReadClaim(rawToken, "preferred_username");
             Console.WriteLine($"[task] subscriber: resolved caller's OIDC token, preferred_username={preferredUsername}");
         }

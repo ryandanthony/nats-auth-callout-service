@@ -68,8 +68,8 @@ public sealed class DiscoveryPublisher
             // BucketProvisioner.BucketConfig so the marker-TTL setting matches the provisioner's
             // (a bare NatsKVConfig re-issued against an already-provisioned bucket makes the
             // server reject the update: "message TTL status can not be disabled").
-            var store = await _kvContext.CreateOrUpdateStoreAsync(BucketProvisioner.BucketConfig(slug.DiscoveryBucket), cancellationToken).ConfigureAwait(false);
-            await store.PutAsync(AppSlug.DiscoveryDescriptorKey, bytes, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var store = await _kvContext.CreateOrUpdateStoreAsync(BucketProvisioner.BucketConfig(slug.DiscoveryBucket), cancellationToken);
+            await store.PutAsync(AppSlug.DiscoveryDescriptorKey, bytes, cancellationToken: cancellationToken);
         }
     }
 

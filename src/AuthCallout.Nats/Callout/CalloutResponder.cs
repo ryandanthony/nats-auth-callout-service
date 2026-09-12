@@ -106,7 +106,7 @@ public sealed class CalloutResponder
             MaxDegreeOfParallelism = _options.MaxDegreeOfParallelism,
             CancellationToken = cancellationToken,
         };
-        await Parallel.ForEachAsync(messages, parallelOptions, HandleAsync).ConfigureAwait(false);
+        await Parallel.ForEachAsync(messages, parallelOptions, HandleAsync);
     }
 
     private async ValueTask HandleAsync(NatsMsg<byte[]> msg, CancellationToken cancellationToken)
@@ -117,7 +117,7 @@ public sealed class CalloutResponder
 
         try
         {
-            await ProcessAsync(msg, requestToken).ConfigureAwait(false);
+            await ProcessAsync(msg, requestToken);
         }
         catch (OperationCanceledException) when (requestToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
@@ -150,10 +150,10 @@ public sealed class CalloutResponder
             return;
         }
 
-        var decision = await _dependencies.Pipeline.ResolveAsync(request, activeConfig, cancellationToken).ConfigureAwait(false);
-        decision = await StoreIdentityIfNeededAsync(decision, request, cancellationToken).ConfigureAwait(false);
+        var decision = await _dependencies.Pipeline.ResolveAsync(request, activeConfig, cancellationToken);
+        decision = await StoreIdentityIfNeededAsync(decision, request, cancellationToken);
 
-        await ReplyAsync(msg, request, decision, envelope.ServerXkeyPublic, cancellationToken).ConfigureAwait(false);
+        await ReplyAsync(msg, request, decision, envelope.ServerXkeyPublic, cancellationToken);
 
         // Fire-and-forget, strictly after the reply: IEventEmitter.EmitAsync is documented
         // never to throw (ADR 0008), so this is not awaited and never delays or risks the
@@ -181,7 +181,7 @@ public sealed class CalloutResponder
         var response = MintResponse(decision, request);
         var responseBytes = Encoding.UTF8.GetBytes(response.EncodedResponseJwt);
         responseBytes = CalloutXkeyEnvelope.Seal(responseBytes, serverXkeyPublic, _dependencies.Crypto);
-        await msg.ReplyAsync(responseBytes, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await msg.ReplyAsync(responseBytes, cancellationToken: cancellationToken);
     }
 
     private SignedAuthResponse MintResponse(Decision decision, AuthRequest request) => decision switch
@@ -207,7 +207,7 @@ public sealed class CalloutResponder
             return DenyForStoreFailure(granted);
         }
 
-        var writeResult = await _dependencies.IdentityStoreWriter.WriteAsync(granted, request.RawToken, cancellationToken).ConfigureAwait(false);
+        var writeResult = await _dependencies.IdentityStoreWriter.WriteAsync(granted, request.RawToken, cancellationToken);
         if (writeResult.Succeeded)
         {
             return decision;

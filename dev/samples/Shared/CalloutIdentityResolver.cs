@@ -38,8 +38,8 @@ public sealed class CalloutIdentityResolver(INatsKVContext kv, DiscoveryDescript
 
         if (!_publicKeyCache.TryGetValue(kid, out var publicKey))
         {
-            var keysBucket = await kv.GetStoreAsync(descriptor.IdentityPropagation.AssertionKeysBucket!).ConfigureAwait(false);
-            var keyEntry = await keysBucket.GetEntryAsync<string>(SanitizeKey(kid)).ConfigureAwait(false);
+            var keysBucket = await kv.GetStoreAsync(descriptor.IdentityPropagation.AssertionKeysBucket!);
+            var keyEntry = await keysBucket.GetEntryAsync<string>(SanitizeKey(kid));
             publicKey = keyEntry.Value!;
             _publicKeyCache[kid] = publicKey;
         }
@@ -61,8 +61,8 @@ public sealed class CalloutIdentityResolver(INatsKVContext kv, DiscoveryDescript
     /// <returns>The caller's raw OIDC token.</returns>
     public async Task<string> ResolveOidcTokenAsync(string verifiedConnectionId)
     {
-        var tokensBucket = await kv.GetStoreAsync(descriptor.IdentityPropagation.OidcTokenBucket!).ConfigureAwait(false);
-        var entry = await tokensBucket.GetEntryAsync<string>(verifiedConnectionId).ConfigureAwait(false);
+        var tokensBucket = await kv.GetStoreAsync(descriptor.IdentityPropagation.OidcTokenBucket!);
+        var entry = await tokensBucket.GetEntryAsync<string>(verifiedConnectionId);
         return entry.Value!;
     }
 

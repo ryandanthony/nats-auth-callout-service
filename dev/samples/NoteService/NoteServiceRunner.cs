@@ -90,15 +90,15 @@ public static class NoteServiceRunner
         using var runCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var subscriberReady = new TaskCompletionSource();
         var subscriberTask = Task.Run(() => NoteSubscriber.RunAsync(client, kv, descriptor, subscriberReady, runCts.Token), runCts.Token);
-        await subscriberReady.Task.WaitAsync(runCts.Token).ConfigureAwait(false);
+        await subscriberReady.Task.WaitAsync(runCts.Token);
 
         await NotePublisher.PublishDemoNotesAsync(client, descriptor, assertion, runCts.Token);
 
-        await Task.Delay(TimeSpan.FromSeconds(2), CancellationToken.None).ConfigureAwait(false);
+        await Task.Delay(TimeSpan.FromSeconds(2), CancellationToken.None);
         await runCts.CancelAsync();
         try
         {
-            await subscriberTask.ConfigureAwait(false);
+            await subscriberTask;
         }
         catch (OperationCanceledException)
         {

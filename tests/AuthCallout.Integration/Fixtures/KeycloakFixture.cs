@@ -54,7 +54,7 @@ public sealed class KeycloakFixture : IAsyncLifetime
 
         var realmJson = IntegrationRealm.BuildRealmJson();
         var realmFile = Path.Combine(Path.GetTempPath(), $"integration-realm-{Guid.NewGuid():N}.json");
-        await File.WriteAllTextAsync(realmFile, realmJson).ConfigureAwait(false);
+        await File.WriteAllTextAsync(realmFile, realmJson);
 
         try
         {
@@ -77,7 +77,7 @@ public sealed class KeycloakFixture : IAsyncLifetime
                     .UsingHttpMessageHandler(waitStrategyHandler)))
                 .Build();
 
-            await _container.StartAsync().ConfigureAwait(false);
+            await _container.StartAsync();
         }
         finally
         {
@@ -116,7 +116,7 @@ public sealed class KeycloakFixture : IAsyncLifetime
     {
         if (_container is not null)
         {
-            await _container.DisposeAsync().ConfigureAwait(false);
+            await _container.DisposeAsync();
         }
     }
 

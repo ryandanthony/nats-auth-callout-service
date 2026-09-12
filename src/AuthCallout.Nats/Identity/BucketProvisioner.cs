@@ -78,30 +78,30 @@ public sealed class BucketProvisioner
     {
         ArgumentNullException.ThrowIfNull(routing);
 
-        await CreateOrUpdateAsync(AppSlug.AssertionKeysBucket, cancellationToken).ConfigureAwait(false);
+        await CreateOrUpdateAsync(AppSlug.AssertionKeysBucket, cancellationToken);
 
         var configuredSlugs = new HashSet<string>(StringComparer.Ordinal);
         foreach (var application in routing.Applications)
         {
             var slug = application.Slug;
             configuredSlugs.Add(slug.Value);
-            await CreateOrUpdateAsync(slug.DiscoveryBucket, cancellationToken).ConfigureAwait(false);
+            await CreateOrUpdateAsync(slug.DiscoveryBucket, cancellationToken);
 
             if (!application.EffectiveIdentityPropagation.Enabled)
             {
                 continue;
             }
 
-            await CreateOrUpdateAsync(slug.OidcTokensBucket, cancellationToken).ConfigureAwait(false);
-            await CreateOrUpdateAsync(slug.AssertionsBucket, cancellationToken).ConfigureAwait(false);
+            await CreateOrUpdateAsync(slug.OidcTokensBucket, cancellationToken);
+            await CreateOrUpdateAsync(slug.AssertionsBucket, cancellationToken);
         }
 
-        await ReportOrphanedBucketsAsync(configuredSlugs, cancellationToken).ConfigureAwait(false);
+        await ReportOrphanedBucketsAsync(configuredSlugs, cancellationToken);
     }
 
     private async Task ReportOrphanedBucketsAsync(HashSet<string> configuredSlugs, CancellationToken cancellationToken)
     {
-        await foreach (var bucket in _kvContext.GetBucketNamesAsync(cancellationToken).ConfigureAwait(false))
+        await foreach (var bucket in _kvContext.GetBucketNamesAsync(cancellationToken))
         {
             if (PerAppBucketSlug.TryExtract(bucket) is not { } slug || configuredSlugs.Contains(slug))
             {
@@ -116,6 +116,6 @@ public sealed class BucketProvisioner
     private async Task CreateOrUpdateAsync(string bucket, CancellationToken cancellationToken)
     {
         var config = BucketConfig(bucket);
-        await _kvContext.CreateOrUpdateStoreAsync(config, cancellationToken).ConfigureAwait(false);
+        await _kvContext.CreateOrUpdateStoreAsync(config, cancellationToken);
     }
 }

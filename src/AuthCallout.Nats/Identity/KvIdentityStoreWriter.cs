@@ -96,15 +96,15 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
             var slug = AppSlug.From(grant.Application!);
             var connectionId = ConnectionIdGenerator.NewId();
 
-            var tokenStore = await _kvContext.GetStoreAsync(slug.OidcTokensBucket, cancellationToken).ConfigureAwait(false);
-            await tokenStore.CreateAsync(connectionId, rawOidcToken, ttl, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var tokenStore = await _kvContext.GetStoreAsync(slug.OidcTokensBucket, cancellationToken);
+            await tokenStore.CreateAsync(connectionId, rawOidcToken, ttl, cancellationToken: cancellationToken);
 
             var claims = new AssertionClaims(connectionId, grant.Principal!, slug.Value, grant.Issuer!, grant.Expiry);
             var signed = _assertionSigner.Sign(claims);
 
-            var assertionStore = await _kvContext.GetStoreAsync(slug.AssertionsBucket, cancellationToken).ConfigureAwait(false);
+            var assertionStore = await _kvContext.GetStoreAsync(slug.AssertionsBucket, cancellationToken);
             var assertionKey = AppSlug.DeriveKeySegment(grant.SelfLookupKey);
-            await CreateOrReplaceAsync(assertionStore, assertionKey, signed.CompactJwt, ttl, cancellationToken).ConfigureAwait(false);
+            await CreateOrReplaceAsync(assertionStore, assertionKey, signed.CompactJwt, ttl, cancellationToken);
 
             return new IdentityStoreWriteResult(Succeeded: true, ConnectionId: connectionId);
         }
@@ -122,16 +122,16 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
     {
         ArgumentNullException.ThrowIfNull(config);
 
-        var resolvedKeys = await AssertionKeyResolver.ResolveAsync(config.Bootstrap.AssertionKeys, _secretResolver, cancellationToken).ConfigureAwait(false);
-        await _keysPublisher.PublishAsync(resolvedKeys, cancellationToken).ConfigureAwait(false);
+        var resolvedKeys = await AssertionKeyResolver.ResolveAsync(config.Bootstrap.AssertionKeys, _secretResolver, cancellationToken);
+        await _keysPublisher.PublishAsync(resolvedKeys, cancellationToken);
 
         var currentKid = resolvedKeys.FirstOrDefault(static k => k.Active)?.Kid;
-        await _discoveryPublisher.PublishAsync(config.Routing, currentKid, cancellationToken).ConfigureAwait(false);
+        await _discoveryPublisher.PublishAsync(config.Routing, currentKid, cancellationToken);
     }
 
     private static async Task CreateOrReplaceAsync(INatsKVStore store, string key, string value, TimeSpan ttl, CancellationToken cancellationToken)
     {
-        var result = await store.TryCreateAsync(key, value, ttl, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var result = await store.TryCreateAsync(key, value, ttl, cancellationToken: cancellationToken);
         if (result.Success)
         {
             return;
@@ -146,7 +146,7 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
         // per token, but a reconnecting client's sub is stable), unlike the always-fresh
         // generated connection id above. Replace rather than leave a stale assertion for a
         // superseded connection readable under the same key.
-        await store.PurgeAsync(key, cancellationToken: cancellationToken).ConfigureAwait(false);
-        await store.CreateAsync(key, value, ttl, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await store.PurgeAsync(key, cancellationToken: cancellationToken);
+        await store.CreateAsync(key, value, ttl, cancellationToken: cancellationToken);
     }
 }
