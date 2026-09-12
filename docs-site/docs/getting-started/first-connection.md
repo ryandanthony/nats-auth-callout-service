@@ -61,11 +61,15 @@ var assertion = descriptor.IdentityPropagation.Enabled
     : null;
 
 var headers = new NatsHeaders { { descriptor.IdentityPropagation.Header, assertion } };
-await client.Connection.PublishAsync("notes.dev.hello", "note #1", headers: headers);
+await client.Connection.PublishAsync("notes.hello", "note #1", headers: headers);
 ```
 
 That's the full happy path: OIDC token in, scoped NATS grant + a verifiable
-identity header out. See [Identity propagation](../guides/identity-propagation)
+identity header out. (This page uses the raw NATS.NET client to show the
+callout flow directly; the `dev/samples` `NoteService`/`TaskService` do the
+same thing on top of [Wolverine](https://wolverinefx.net), attaching the
+identity header via a message middleware — see [`dev/README.md`](https://github.com/ryandanthony/nats-auth-callout-service/blob/main/dev/README.md).)
+See [Identity propagation](../guides/identity-propagation)
 for how a subscriber verifies that header and resolves your OIDC claims, and
 [Authorization model](../guides/authorization-model) for how profiles,
 `match`, and template variables decide the grant.
