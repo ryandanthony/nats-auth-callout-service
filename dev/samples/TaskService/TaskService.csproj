@@ -1,10 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- P15 sample app (dev/ only, doc 08 §Local development "Task service"): a second,
-       independent application on tasks.>, different issuer `match`, and a "worker" service
-       profile using autoAddSessionAccess to resolve callers - proves application isolation
-       (ADR 0001) and the anonymous grant union across apps (ADR 0004). Not referenced by
-       src/ or tests/; both AppHosts add it as Projects.TaskService. -->
+  <!-- P15 sample app (dev/ only), Wolverine edition: the "tasks" application modeled as a
+       Wolverine app over NATS, authenticated through the callout - a second, independent
+       application from NoteService (own account/issuer match/subject space) proving isolation
+       (ADR 0001). Domain (commands/queries/events) with an in-memory store, plus an in-process
+       demo client attaching its Callout-Identity assertion, verified by CalloutIdentityMiddleware
+       (Shared). Not referenced by src/ or tests/; both AppHosts add it as Projects.TaskService. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -12,10 +13,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <NoWarn>$(NoWarn);MA0048</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="NATS.Net" />
+    <PackageReference Include="WolverineFx" />
+    <PackageReference Include="WolverineFx.Nats" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
   </ItemGroup>
 
   <ItemGroup>

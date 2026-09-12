@@ -22,9 +22,12 @@ profiles:
     match:
       realm_access.roles: [tasks-worker]
     grant:
-      # Only the app's own subjects; the callout auto-adds KV reads + the JetStream wire-level
-      # subjects a real KV client needs (see Note.yaml / ADR 0013 §JetStream wire-level subjects).
-      publish: [tasks.dev.>]
-      subscribe: [tasks.dev.>]
+      # The Wolverine sample uses tasks.commands / tasks.queries / tasks.events plus
+      # Wolverine's fixed reply subject `wolverine.response`; the callout auto-adds KV reads +
+      # the JetStream wire-level subjects a real KV client needs (see Note.yaml / ADR 0013
+      # §JetStream wire-level subjects). tasks.> keeps every domain subject in-grant;
+      # wolverine.response is scoped to the TASKS account so it never crosses app boundaries.
+      publish: [tasks.>, wolverine.response]
+      subscribe: [tasks.>, wolverine.response]
     nameClaim: preferred_username
     autoAddSessionAccess: true

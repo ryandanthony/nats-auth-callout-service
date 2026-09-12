@@ -22,11 +22,15 @@ profiles:
     match:
       realm_access.roles: [notes-editor]
     grant:
-      # Only the app's own subjects are configured. The callout auto-adds the KV read grants
-      # (keys/discovery/token/assertion $KV.* reads) AND the JetStream wire-level subjects a
-      # real KV client needs ($JS.API.STREAM.INFO/DIRECT.GET per bucket + the scoped per-principal inbox reply path),
-      # so identity-propagation reads work without any KV plumbing in app config (ADR 0013).
-      publish: [notes.dev.>]
-      subscribe: [notes.dev.>]
+      # The Wolverine sample publishes/listens on notes.commands / notes.queries / notes.events
+      # and uses Wolverine's fixed request/reply subject `wolverine.response`. The callout
+      # auto-adds the KV read grants (keys/discovery/token/assertion $KV.* reads) AND the
+      # JetStream wire-level subjects a real KV client needs ($JS.API.STREAM.INFO/DIRECT.GET
+      # per bucket + the scoped per-principal inbox reply path), so identity-propagation reads
+      # work without any KV plumbing in app config (ADR 0013). notes.> keeps every domain
+      # subject inside this app's grant; wolverine.response is Wolverine's own reply subject,
+      # scoped here to the NOTES account so it never crosses app boundaries (ADR 0001).
+      publish: [notes.>, wolverine.response]
+      subscribe: [notes.>, wolverine.response]
     nameClaim: preferred_username
     autoAddSessionAccess: true

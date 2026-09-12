@@ -1,0 +1,19 @@
+<Project>
+  <!-- Chains to the repo-root Directory.Build.props (analyzers, warnaserror, TFM), then
+       relaxes a few documentation/ceremony analyzer rules for the dev-only sample apps under
+       dev/samples/. These are illustrative example projects (domain message records, Wolverine
+       handlers) where per-member XML docs on every command/event DTO would be pure noise; the
+       types are self-documenting and the samples' behavior is explained in their runners and
+       in dev/README.md. Not shipped in any src/ package. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <!-- SA1600/CS1591: element XML docs — waived for sample DTOs/handlers (see above).
+         SA1633 file headers are still required; every sample file keeps the copyright header.
+         CA1506: the Wolverine + NATS + callout bootstrap in each sample's top-level Program
+         necessarily touches many types; splitting it further would obscure the example.
+         S6664: a demo client logs several Information lines in one method on purpose so the
+         run output narrates each step. -->
+    <NoWarn>$(NoWarn);SA1600;CS1591;CA1506;S6664</NoWarn>
+  </PropertyGroup>
+</Project>

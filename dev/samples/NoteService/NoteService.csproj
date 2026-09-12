@@ -1,10 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- P15 sample app (dev/ only, doc 08 §Local development "Note service"): connects with an
-       OIDC token from the dev Keycloak realm, publishes/subscribes on notes.>, and exercises
-       the doc 06 identity-propagation sequence end to end (fetch its own assertion, attach
-       Callout-Identity on publish; resolve an incoming publisher's identity as a subscriber).
-       Not referenced by src/ or tests/; both AppHosts add it as Projects.NoteService. -->
+  <!-- P15 sample app (dev/ only), Wolverine edition: the "notes" application modeled as a
+       Wolverine app over NATS, authenticated through the callout. Domain (commands/queries/
+       events) with an in-memory store and handlers, plus an in-process demo client that
+       drives traffic attaching its Callout-Identity assertion. Identity propagation is
+       enforced by CalloutIdentityMiddleware (Shared). Not referenced by src/ or tests/; both
+       AppHosts add it as Projects.NoteService. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -12,10 +13,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Wolverine discovers handlers on static classes and generates code that references
+         the sample's own message types; its top-level Program.cs declares no type (MA0048),
+         and Wolverine's generated handler code is exercised at runtime, not compile-time. -->
+    <NoWarn>$(NoWarn);MA0048</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="NATS.Net" />
+    <PackageReference Include="WolverineFx" />
+    <PackageReference Include="WolverineFx.Nats" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
   </ItemGroup>
 
   <ItemGroup>
