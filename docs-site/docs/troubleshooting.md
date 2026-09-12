@@ -29,9 +29,14 @@ last-good stays active — [ADR 0006](https://github.com/ryandanthony/nats-auth-
 |---|---|---|
 | `duplicate-application-name` | Two applications share a `name`. | Rename one — names must be unique across the aggregate. |
 | `duplicate-application-slug` | Two application names slugify to the same value ([ADR 0013](https://github.com/ryandanthony/nats-auth-callout-service/blob/main/docs/architecture-decision-log/0013-kv-bucket-naming-contract.md)). | Rename one so their slugs no longer collide. |
+| `ambiguous-null-match` | An application has no `match` but shares its issuer `authority` with other applications. | Add a `match` — an absent match is only valid when the issuer alone identifies a single application. |
+| `indistinguishable-applications` | Two applications share an issuer and an identical `match` predicate. | Differentiate the matches so exactly one application can win per token. |
+| `divergent-issuer-config` | Two applications share an issuer `authority` but their `issuer` blocks differ (audience, clockSkew, allowedAlgorithms, jwksUri, cache/refresh). | Make every application on one authority use an identical `issuer` block — validation runs once per token against the shared authority's parameters ([ADR 0016](https://github.com/ryandanthony/nats-auth-callout-service/blob/main/docs/architecture-decision-log/0016-token-validation-parameters.md)). |
 | `application-name-required` / `target-account-required` | Missing `name` / `targetAccount`. | Add the field. |
 | `issuer-authority-required` | Empty `issuer.authority`. | Set the OIDC authority URL. |
 | `clock-skew-negative` | Negative `clockSkew`. | Use a non-negative duration (default `60s`, max `300s`). |
+| `clock-skew-exceeds-cap` | `clockSkew` above the `300s` hard cap ([ADR 0016](https://github.com/ryandanthony/nats-auth-callout-service/blob/main/docs/architecture-decision-log/0016-token-validation-parameters.md)). | Use `300s` or less. |
+| `algorithm-not-allowed` | `allowedAlgorithms` lists an algorithm outside the asymmetric set (e.g. `HS256`, `none`). | Only `RS*`/`ES*`/`PS*` are permitted — HMAC enables algorithm confusion against JWKS keys. |
 | `algorithms-required` | Empty `allowedAlgorithms`. | List at least one asymmetric algorithm (`RS256`, `ES256`, ...). |
 | `audience-required-when-validating` | `validateAudience: true` with no `audience`. | Add `audience`, or explicitly set `validateAudience: false` if your provider omits `aud`. |
 | `profile-name-required` | A profile has an empty `name`. | Name every profile. |
