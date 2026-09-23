@@ -40,7 +40,7 @@ internal sealed class ResponderHarness
 
         var dependencies = new CalloutResponderDependencies(
             effectivePipeline, effectiveActiveConfigSource, effectiveMinter, effectiveCrypto, effectiveIdentityStoreWriter, effectiveEventEmitter);
-        _responder = new CalloutResponder(dependencies, effectiveOptions, onDiagnostic: _diagnostics.Enqueue, onDecision: _decisions.Enqueue);
+        _responder = new CalloutResponder(dependencies, effectiveOptions, onDiagnostic: _diagnostics.Enqueue, onDecision: _decisions.Enqueue, timeProvider: effective.TimeProvider);
 
         _connection = effective.Connection ?? Substitute.For<INatsConnection>();
         if (effective.Connection is null)

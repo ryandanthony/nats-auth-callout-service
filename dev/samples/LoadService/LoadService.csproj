@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- P15 dev-only load generator: unlike NoteService/TaskService (which model a real app),
+       LoadService exists purely to exercise the callout. It fetches one OIDC token, then
+       rapidly opens and closes NATS connections in a loop — each connect drives one auth
+       request through the callout, so the new callout_requests_* counters and the
+       callout_request_duration_seconds histogram tick over continuously and can be watched
+       live in the Aspire dashboard's metrics view. Not referenced by src/ or tests/; the
+       AppHost adds it as Projects.LoadService. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Top-level Program.cs declares no type (MA0048). -->
+    <NoWarn>$(NoWarn);MA0048</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NATS.Net" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Shared/SampleSupport.csproj" />
+  </ItemGroup>
+
+</Project>

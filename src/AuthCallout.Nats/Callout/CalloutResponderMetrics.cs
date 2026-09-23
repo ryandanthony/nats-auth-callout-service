@@ -39,6 +39,11 @@ public static class CalloutResponderMetrics
     public const string DroppedCounterName = "callout_requests_dropped_total";
 #pragma warning restore S2339
 
+    /// <summary>The histogram name for per-request handling latency (<c>callout_request_duration_seconds</c>): wall-clock seconds from receiving an auth request to sending its reply. Only recorded for requests that replied (grant/deny); dropped requests never reply and are not timed.</summary>
+#pragma warning disable S2339
+    public const string DurationHistogramName = "callout_request_duration_seconds";
+#pragma warning restore S2339
+
     private static readonly Meter Meter = new(MeterName);
 
     /// <summary>Gets the counter incremented once per request the callout granted and replied to (success).</summary>
@@ -55,4 +60,25 @@ public static class CalloutResponderMetrics
     /// <value>The dropped-requests counter.</value>
     public static Counter<long> Dropped { get; } =
         Meter.CreateCounter<long>(DroppedCounterName, description: "Auth-callout requests dropped without a reply (fail closed): malformed, xkey mismatch, no active config, per-request timeout, or unexpected failure.");
+
+    /// <summary>Gets the histogram of per-request handling latency in seconds (receive to reply), tagged with the outcome (<c>granted</c>/<c>denied</c>). Only recorded for requests that replied.</summary>
+    /// <value>The request-duration histogram.</value>
+    public static Histogram<double> RequestDuration { get; } =
+        Meter.CreateHistogram<double>(DurationHistogramName, unit: "s", description: "Wall-clock seconds from receiving an auth-callout request to sending its reply, tagged by outcome (granted/denied).");
+
+    /// <summary>Records a granted decision: increments <see cref="Granted"/> and the <see cref="RequestDuration"/> histogram tagged <c>outcome=granted</c>.</summary>
+    /// <param name="elapsedSeconds">The receive-to-reply latency in seconds.</param>
+    public static void RecordGranted(double elapsedSeconds)
+    {
+        Granted.Add(1);
+        RequestDuration.Record(elapsedSeconds, new KeyValuePair<string, object?>("outcome", "granted"));
+    }
+
+    /// <summary>Records a denied decision: increments <see cref="Denied"/> and the <see cref="RequestDuration"/> histogram tagged <c>outcome=denied</c>.</summary>
+    /// <param name="elapsedSeconds">The receive-to-reply latency in seconds.</param>
+    public static void RecordDenied(double elapsedSeconds)
+    {
+        Denied.Add(1);
+        RequestDuration.Record(elapsedSeconds, new KeyValuePair<string, object?>("outcome", "denied"));
+    }
 }

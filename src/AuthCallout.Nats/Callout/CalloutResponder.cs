@@ -49,6 +49,7 @@ public sealed class CalloutResponder
     private readonly CalloutResponderOptions _options;
     private readonly Action<string>? _onDiagnostic;
     private readonly Action<string>? _onDecision;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>Initializes a new instance of the <see cref="CalloutResponder"/> class.</summary>
     /// <param name="dependencies">The collaborators this responder orchestrates per request.</param>
@@ -70,11 +71,19 @@ public sealed class CalloutResponder
     /// Requests that never reply (malformed, xkey mismatch, timeout) go through
     /// <paramref name="onDiagnostic"/> instead, not here.
     /// </param>
+    /// <param name="timeProvider">
+    /// The monotonic time source for the per-request duration metric
+    /// (<see cref="CalloutResponderMetrics.RequestDuration"/>), read via
+    /// <see cref="TimeProvider.GetTimestamp"/>/<see cref="TimeProvider.GetElapsedTime(long)"/>.
+    /// Defaults to <see cref="TimeProvider.System"/>; tests inject a fake to assert on the
+    /// recorded latency deterministically (mirrors <c>EventEmitter</c>'s own time source).
+    /// </param>
     public CalloutResponder(
         CalloutResponderDependencies dependencies,
         CalloutResponderOptions options,
         Action<string>? onDiagnostic = null,
-        Action<string>? onDecision = null)
+        Action<string>? onDecision = null,
+        TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(dependencies);
         dependencies.Validate();
@@ -85,6 +94,7 @@ public sealed class CalloutResponder
         _options = options;
         _onDiagnostic = onDiagnostic;
         _onDecision = onDecision;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>
@@ -127,13 +137,17 @@ public sealed class CalloutResponder
 
     private async ValueTask HandleAsync(NatsMsg<byte[]> msg, CancellationToken cancellationToken)
     {
+        // Monotonic start marker for the per-request duration metric: captured the moment the
+        // message is picked up, stopped right after the reply is sent (only replied requests
+        // are timed; a dropped request never replies, so its latency is meaningless).
+        var startTimestamp = _timeProvider.GetTimestamp();
         using var requestCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         requestCts.CancelAfter(_options.PerRequestTimeout);
         var requestToken = requestCts.Token;
 
         try
         {
-            await ProcessAsync(msg, requestToken);
+            await ProcessAsync(msg, startTimestamp, requestToken);
         }
         catch (OperationCanceledException) when (requestToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
@@ -145,7 +159,7 @@ public sealed class CalloutResponder
         }
     }
 
-    private async Task ProcessAsync(NatsMsg<byte[]> msg, CancellationToken cancellationToken)
+    private async Task ProcessAsync(NatsMsg<byte[]> msg, long startTimestamp, CancellationToken cancellationToken)
     {
         var envelope = CalloutXkeyEnvelope.Open(msg, _dependencies.Crypto);
         if (!envelope.Accepted)
@@ -172,9 +186,10 @@ public sealed class CalloutResponder
         await ReplyAsync(msg, request, decision, envelope.ServerXkeyPublic, cancellationToken);
 
         // The reply is out: record the success/failure metric for the callout method being
-        // invoked (a grant is a success, a denial a failure) and log the value-free decision
-        // summary. Both are strictly after the reply, on the same no-secret basis as the event.
-        RecordAndLogDecision(decision);
+        // invoked (a grant is a success, a denial a failure), the receive-to-reply duration,
+        // and log the value-free decision summary. All are strictly after the reply, on the
+        // same no-secret basis as the event.
+        RecordAndLogDecision(decision, startTimestamp);
 
         // Fire-and-forget, strictly after the reply: IEventEmitter.EmitAsync is documented
         // never to throw (ADR 0008), so this is not awaited and never delays or risks the
@@ -189,14 +204,15 @@ public sealed class CalloutResponder
         _onDiagnostic?.Invoke(reason);
     }
 
-    /// <summary>Records the grant/deny outcome metric and logs a value-free decision summary, strictly after the reply has been sent.</summary>
-    private void RecordAndLogDecision(Decision decision)
+    /// <summary>Records the grant/deny outcome metric, the receive-to-reply duration, and logs a value-free decision summary, strictly after the reply has been sent.</summary>
+    private void RecordAndLogDecision(Decision decision, long startTimestamp)
     {
+        var elapsedSeconds = _timeProvider.GetElapsedTime(startTimestamp).TotalSeconds;
         switch (decision)
         {
             case GrantedDecision granted:
             {
-                CalloutResponderMetrics.Granted.Add(1);
+                CalloutResponderMetrics.RecordGranted(elapsedSeconds);
                 _onDecision?.Invoke(
                     $"Granted: app={granted.Application ?? "<anonymous>"} principal={granted.Principal ?? "<none>"} profile={granted.ProfileName ?? "<anonymous>"} propagation={granted.IdentityPropagationEnabled}.");
                 break;
@@ -204,7 +220,7 @@ public sealed class CalloutResponder
 
             case DeniedDecision denied:
             {
-                CalloutResponderMetrics.Denied.Add(1);
+                CalloutResponderMetrics.RecordDenied(elapsedSeconds);
                 _onDecision?.Invoke(
                     $"Denied: app={denied.Application ?? "<none>"} principal={denied.Principal ?? "<none>"} reason={denied.Reason}.");
                 break;

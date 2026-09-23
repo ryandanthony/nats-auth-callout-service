@@ -31,4 +31,6 @@ internal sealed class ResponderHarnessOptions
     public CalloutResponderOptions? ResponderOptions { get; init; }
 
     public INatsConnection? Connection { get; init; }
+
+    public TimeProvider? TimeProvider { get; init; }
 }

@@ -25,6 +25,7 @@ internal sealed class ResponderCounterListener : IDisposable
     private long _granted;
     private long _denied;
     private long _dropped;
+    private readonly System.Collections.Concurrent.ConcurrentQueue<double> _durations = new();
 
     public ResponderCounterListener()
     {
@@ -59,6 +60,13 @@ internal sealed class ResponderCounterListener : IDisposable
                 // to CalloutResponderMetrics without a corresponding tally here.
             }
         });
+        _listener.SetMeasurementEventCallback<double>((instrument, measurement, _, _) =>
+        {
+            if (string.Equals(instrument.Name, CalloutResponderMetrics.DurationHistogramName, StringComparison.Ordinal))
+            {
+                _durations.Enqueue(measurement);
+            }
+        });
         _listener.Start();
     }
 
@@ -67,6 +75,9 @@ internal sealed class ResponderCounterListener : IDisposable
     public long Denied => Interlocked.Read(ref _denied);
 
     public long Dropped => Interlocked.Read(ref _dropped);
+
+    /// <summary>The per-request duration measurements (seconds) recorded on the histogram, in record order.</summary>
+    public IReadOnlyCollection<double> Durations => _durations;
 
     public void Dispose() => _listener.Dispose();
 }

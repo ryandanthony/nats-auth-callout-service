@@ -493,6 +493,56 @@ public sealed class CalloutResponderTests
         Assert.Equal(1, counters.Dropped);
     }
 
+    // ---- per-request duration (receive to reply) ----
+
+    [Fact]
+    public async Task RunAsync_RepliedRequest_RecordsRequestDuration()
+    {
+        var pipeline = Substitute.For<IResolutionPipeline>();
+        pipeline.ResolveAsync(Arg.Any<AuthRequest>(), Arg.Any<ActiveConfig>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Decision>(CalloutTestBuilders.Granted()));
+        var harness = new ResponderHarness(new ResponderHarnessOptions { Pipeline = pipeline });
+
+        using var counters = new ResponderCounterListener();
+        await harness.RunOneAsync(CalloutTestBuilders.BuildRequestPayload());
+
+        Assert.Single(counters.Durations);
+        Assert.True(counters.Durations.Single() >= 0, "Recorded duration should be non-negative.");
+    }
+
+    [Fact]
+    public async Task RunAsync_RequestDuration_MeasuresElapsedTimeFromReceiveToReply()
+    {
+        // A controllable monotonic clock: the responder reads GetTimestamp() at receive and
+        // GetElapsedTime() after the reply, so advancing the clock by a known amount between
+        // those two reads makes the recorded latency deterministic.
+        var clock = new AdvanceableTimeProvider();
+        var pipeline = Substitute.For<IResolutionPipeline>();
+        pipeline.ResolveAsync(Arg.Any<AuthRequest>(), Arg.Any<ActiveConfig>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                clock.Advance(TimeSpan.FromMilliseconds(250));
+                return Task.FromResult<Decision>(CalloutTestBuilders.Granted());
+            });
+        var harness = new ResponderHarness(new ResponderHarnessOptions { Pipeline = pipeline, TimeProvider = clock });
+
+        using var counters = new ResponderCounterListener();
+        await harness.RunOneAsync(CalloutTestBuilders.BuildRequestPayload());
+
+        Assert.Equal(0.25, counters.Durations.Single(), precision: 3);
+    }
+
+    [Fact]
+    public async Task RunAsync_DroppedRequest_RecordsNoRequestDuration()
+    {
+        var harness = new ResponderHarness();
+
+        using var counters = new ResponderCounterListener();
+        await harness.RunOneAsync(Encoding.UTF8.GetBytes("not a valid nats jwt"));
+
+        Assert.Empty(counters.Durations);
+    }
+
     // ---- constructor validation ----
 
     [Fact]

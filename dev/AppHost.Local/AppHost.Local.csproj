@@ -39,6 +39,7 @@
     <ProjectReference Include="../../src/AuthCallout.Host/AuthCallout.Host.csproj" />
     <ProjectReference Include="../samples/NoteService/NoteService.csproj" />
     <ProjectReference Include="../samples/TaskService/TaskService.csproj" />
+    <ProjectReference Include="../samples/LoadService/LoadService.csproj" />
   </ItemGroup>
 
 </Project>

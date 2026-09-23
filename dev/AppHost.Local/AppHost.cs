@@ -59,4 +59,25 @@ builder.AddProject<Projects.TaskService>("task")
     .WithReference(keycloak)
     .WaitFor(callout);
 
+// LoadService (dev-only load generator): rapidly opens NATS connections, each of which drives
+// one auth-callout request, so the callout_requests_* counters and the
+// callout_request_duration_seconds histogram move continuously and can be watched live in the
+// dashboard's Metrics tab. Two axes of parallelism, so the callout's own bounded-concurrency
+// path is actually exercised:
+//   1. Each instance drives LOAD_CONCURRENCY parallel connect loops in-process.
+//   2. Several independent instances (load-0, load-1, ...) run side by side as separate
+//      Aspire resources — override LoadInstances to fan out wider.
+// Override LOAD_CONCURRENCY / LOAD_DELAY_MS / LOAD_DURATION_SEC per instance in the dashboard.
+const int LoadInstances = 3;
+var natsUri = ReferenceExpression.Create($"nats://{nats.GetEndpoint("tcp").Property(EndpointProperty.HostAndPort)}");
+for (var i = 0; i < LoadInstances; i++)
+{
+    builder.AddProject<Projects.LoadService>($"load-{i}")
+        .WithEnvironment("NATS_URI", natsUri)
+        .WithEnvironment("LOAD_CONCURRENCY", "8")
+        .WithEnvironment("LOAD_DELAY_MS", "25")
+        .WithReference(keycloak)
+        .WaitFor(callout);
+}
+
 await builder.Build().RunAsync();
