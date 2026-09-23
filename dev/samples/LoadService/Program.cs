@@ -5,7 +5,7 @@
 // -----------------------------------------------------------------------
 
 using System.Globalization;
-using AuthCallout.Dev.Samples.Common;
+using AuthCallout.Dev.Samples.LoadService;
 using NATS.Client.Core;
 
 // LoadService (dev-only): a deliberately dumb load generator for the callout. Unlike
@@ -19,8 +19,10 @@ using NATS.Client.Core;
 //   - callout_requests_granted_total   (one per successful connect)
 //   - callout_request_duration_seconds (receive->reply latency histogram, tagged outcome=granted)
 //
-// The token is fetched once (reused for every connect: re-minting per iteration would rate-limit
-// Keycloak, not the callout, which is what we actually want to exercise). Tunables via env:
+// Each worker reuses one token across connects (re-minting per iteration would rate-limit
+// Keycloak, not the callout, which is what we actually want to exercise) and re-mints it only
+// shortly before its exp. The dev realm's accessTokenLifespan is 300s, so without the refresh
+// every connect is denied as expired after ~5 minutes. Tunables via env:
 //   LOAD_CONCURRENCY   parallel connect loops (default 8)
 //   LOAD_DELAY_MS      pause between connects within each loop (default 25ms)
 //   LOAD_DURATION_SEC  total run time; 0 or unset = run until cancelled (Ctrl+C / resource stop)
@@ -44,10 +46,10 @@ Console.CancelKeyPress += (_, e) =>
     stopSignal.Cancel();
 };
 
-// Each worker fetches its own token once at startup, so its connections carry a distinct jti
-// (the callout's identity self-lookup key, doc 07) and never contend on a single hot KV key —
-// exactly like distinct real clients, which is what this load test should model. Re-minting is
-// per worker at startup, not per connect, so it stresses the callout, not Keycloak.
+// Each worker fetches its own token, so its connections carry a distinct jti (the callout's
+// identity self-lookup key, doc 07) and never contend on a single hot KV key, exactly like
+// distinct real clients, which is what this load test should model. Re-minting is per worker
+// near expiry, not per connect, so it stresses the callout, not Keycloak.
 using var startupCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
 
 var totalConnects = 0L;
@@ -73,26 +75,23 @@ await Console.Out.WriteLineAsync(
 
 return;
 
-// Fetches this worker's own token/connection options once (a distinct jti so it never shares a
-// self-lookup key with other workers), then opens a fresh connection each iteration (= a fresh
-// callout auth request), records the outcome, and pauses by the configured delay.
+// Fetches this worker's own token/connection options (a distinct jti so it never shares a
+// self-lookup key with other workers), re-fetching shortly before the token expires, then opens
+// a fresh connection each iteration (= a fresh callout auth request), records the outcome, and
+// pauses by the configured delay.
 async Task DriveAsync(TimeSpan loopDelay, CancellationToken startupToken, CancellationToken cancellationToken)
 {
-    CalloutConnectionInfo connection;
-    try
+    var connection = await RefreshingCalloutConnection.CreateAsync(AppSlug, TimeProvider.System, startupToken);
+    if (connection is null)
     {
-        connection = await CalloutConnection.PrepareAsync(
-            AppSlug, clientId: "notes-web", username: "note-user", password: "note-pass", startupToken);
-    }
-    catch (Exception ex) when (ex is not OperationCanceledException)
-    {
-        await Console.Error.WriteLineAsync($"LoadService: worker token fetch failed ({ex.GetType().Name}: {ex.Message}); worker idle.");
+        await Console.Error.WriteLineAsync("LoadService: initial worker token fetch failed; worker idle.");
         return;
     }
 
     while (!cancellationToken.IsCancellationRequested)
     {
-        var connected = await TryConnectOnceAsync(connection.Options, cancellationToken);
+        var options = await connection.GetOptionsAsync(cancellationToken);
+        var connected = await TryConnectOnceAsync(options, cancellationToken);
         Interlocked.Increment(ref connected ? ref totalConnects : ref totalFailures);
 
         // On a failure, back off a little so a persistent error doesn't spin the CPU; otherwise
