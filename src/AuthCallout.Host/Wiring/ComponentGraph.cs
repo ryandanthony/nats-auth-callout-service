@@ -92,7 +92,11 @@ public static class ComponentGraph
         var responderDependencies = new CalloutResponderDependencies(
             pipelineParts.ResolutionPipeline, activeConfigSource, pipelineParts.Minter, pipelineParts.CalloutCrypto, identityStoreWriter, eventEmitter);
         var responderOptions = new CalloutResponderOptions(bootstrap.Concurrency.MaxDegreeOfParallelism, bootstrap.Concurrency.PerRequestTimeout.Value);
-        var responder = new CalloutResponder(responderDependencies, responderOptions, onDiagnostic: static msg => Console.Error.WriteLine($"DIAG: {msg}"));
+        var responder = new CalloutResponder(
+            responderDependencies,
+            responderOptions,
+            onDiagnostic: static msg => Console.Error.WriteLine($"DIAG: {msg}"),
+            onDecision: static msg => Console.Out.WriteLine($"INFO: callout handled request. {msg}"));
 
         var connectionManager = new NatsConnectionManager(
             natsConnection, responder, stateMachine, onDiagnostic: static msg => Console.Error.WriteLine($"INFO: {msg}"));

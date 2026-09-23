@@ -48,6 +48,7 @@ public sealed class CalloutResponder
     private readonly CalloutResponderDependencies _dependencies;
     private readonly CalloutResponderOptions _options;
     private readonly Action<string>? _onDiagnostic;
+    private readonly Action<string>? _onDecision;
 
     /// <summary>Initializes a new instance of the <see cref="CalloutResponder"/> class.</summary>
     /// <param name="dependencies">The collaborators this responder orchestrates per request.</param>
@@ -59,7 +60,21 @@ public sealed class CalloutResponder
     /// dropped. Never called with token, claim, or secret material. Callers (P13) may wire
     /// this to their logger.
     /// </param>
-    public CalloutResponder(CalloutResponderDependencies dependencies, CalloutResponderOptions options, Action<string>? onDiagnostic = null)
+    /// <param name="onDecision">
+    /// Invoked once per request that produced a reply, with a human-readable, value-free
+    /// summary of the decision (grant/deny, application, principal, profile/deny reason) after
+    /// the reply has been sent. This is the per-message "handled" log the responder is
+    /// otherwise silent about on the success path. Optional; when null, decisions are not
+    /// logged. Never called with token or secret material (only the same
+    /// principal/application/issuer fields the outcome event already carries, ADR 0008).
+    /// Requests that never reply (malformed, xkey mismatch, timeout) go through
+    /// <paramref name="onDiagnostic"/> instead, not here.
+    /// </param>
+    public CalloutResponder(
+        CalloutResponderDependencies dependencies,
+        CalloutResponderOptions options,
+        Action<string>? onDiagnostic = null,
+        Action<string>? onDecision = null)
     {
         ArgumentNullException.ThrowIfNull(dependencies);
         dependencies.Validate();
@@ -69,6 +84,7 @@ public sealed class CalloutResponder
         _dependencies = dependencies;
         _options = options;
         _onDiagnostic = onDiagnostic;
+        _onDecision = onDecision;
     }
 
     /// <summary>
@@ -121,11 +137,11 @@ public sealed class CalloutResponder
         }
         catch (OperationCanceledException) when (requestToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            _onDiagnostic?.Invoke("Auth request exceeded the per-request timeout; dropped without reply.");
+            Drop("Auth request exceeded the per-request timeout; dropped without reply.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _onDiagnostic?.Invoke($"Auth request processing failed unexpectedly ({ex.GetType().Name}); dropped without reply.");
+            Drop($"Auth request processing failed unexpectedly ({ex.GetType().Name}); dropped without reply.");
         }
     }
 
@@ -134,7 +150,7 @@ public sealed class CalloutResponder
         var envelope = CalloutXkeyEnvelope.Open(msg, _dependencies.Crypto);
         if (!envelope.Accepted)
         {
-            _onDiagnostic?.Invoke(envelope.RejectionReason ?? "Auth request rejected by the xkey envelope check.");
+            Drop(envelope.RejectionReason ?? "Auth request rejected by the xkey envelope check.");
             return;
         }
 
@@ -146,7 +162,7 @@ public sealed class CalloutResponder
         var activeConfig = _dependencies.ActiveConfigSource.Current;
         if (activeConfig is null)
         {
-            _onDiagnostic?.Invoke("No active config; dropped without reply.");
+            Drop("No active config; dropped without reply.");
             return;
         }
 
@@ -155,10 +171,48 @@ public sealed class CalloutResponder
 
         await ReplyAsync(msg, request, decision, envelope.ServerXkeyPublic, cancellationToken);
 
+        // The reply is out: record the success/failure metric for the callout method being
+        // invoked (a grant is a success, a denial a failure) and log the value-free decision
+        // summary. Both are strictly after the reply, on the same no-secret basis as the event.
+        RecordAndLogDecision(decision);
+
         // Fire-and-forget, strictly after the reply: IEventEmitter.EmitAsync is documented
         // never to throw (ADR 0008), so this is not awaited and never delays or risks the
         // reply that already went out.
         _ = _dependencies.EventEmitter.EmitAsync(decision, request.UserNKey, CancellationToken.None);
+    }
+
+    /// <summary>Counts a request that produced no reply (<see cref="CalloutResponderMetrics.Dropped"/>) and surfaces the value-free reason via the diagnostic callback.</summary>
+    private void Drop(string reason)
+    {
+        CalloutResponderMetrics.Dropped.Add(1);
+        _onDiagnostic?.Invoke(reason);
+    }
+
+    /// <summary>Records the grant/deny outcome metric and logs a value-free decision summary, strictly after the reply has been sent.</summary>
+    private void RecordAndLogDecision(Decision decision)
+    {
+        switch (decision)
+        {
+            case GrantedDecision granted:
+            {
+                CalloutResponderMetrics.Granted.Add(1);
+                _onDecision?.Invoke(
+                    $"Granted: app={granted.Application ?? "<anonymous>"} principal={granted.Principal ?? "<none>"} profile={granted.ProfileName ?? "<anonymous>"} propagation={granted.IdentityPropagationEnabled}.");
+                break;
+            }
+
+            case DeniedDecision denied:
+            {
+                CalloutResponderMetrics.Denied.Add(1);
+                _onDecision?.Invoke(
+                    $"Denied: app={denied.Application ?? "<none>"} principal={denied.Principal ?? "<none>"} reason={denied.Reason}.");
+                break;
+            }
+
+            default:
+                throw new InvalidOperationException("Unrecognized Decision subtype; expected GrantedDecision or DeniedDecision.");
+        }
     }
 
     private bool TryDecodeRequest(byte[] payload, out AuthRequest request)
@@ -170,7 +224,7 @@ public sealed class CalloutResponder
         }
         catch (Exception ex) when (ex is NatsJwtException or FormatException or ArgumentException)
         {
-            _onDiagnostic?.Invoke($"Malformed auth request ({ex.GetType().Name}); dropped without reply.");
+            Drop($"Malformed auth request ({ex.GetType().Name}); dropped without reply.");
             request = null!;
             return false;
         }

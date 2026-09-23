@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------
 
 using AuthCallout.Host.Observability;
+using AuthCallout.Nats.Callout;
 using AuthCallout.Nats.Events;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -39,6 +40,7 @@ public static class OpenTelemetryExtensions
             .ConfigureResource(resource => resource.AddService(serviceName: ResolveServiceName()))
             .WithMetrics(metrics => metrics
                 .AddMeter(HostMetrics.MeterName)
+                .AddMeter(CalloutResponderMetrics.MeterName)
                 .AddMeter(EventEmitterMetrics.MeterName)
                 .AddOtlpExporter())
             .WithTracing(tracing => tracing
