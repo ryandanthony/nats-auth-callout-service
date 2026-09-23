@@ -14,8 +14,8 @@ public static class DevEnvironment
     public static string DefaultNatsUrl => "nats://localhost:4222";
 
     /// <summary>Gets the default Keycloak base URL used when Aspire's injected value is absent.</summary>
-    /// <value>The default Keycloak base URL, <c>https://localhost:8081</c> (AppHost.Local's <c>AddKeycloak("idp", 8081)</c>, doc 08).</value>
-    public static string DefaultKeycloakBaseUrl => "https://localhost:8081";
+    /// <value>The default Keycloak base URL, <c>https://localhost:8083</c> (AppHost.Local's <c>AddKeycloak("idp", 8083)</c>, doc 08).</value>
+    public static string DefaultKeycloakBaseUrl => "https://localhost:8083";
 
     /// <summary>
     /// Reads the Keycloak base URL: Aspire's injected service-discovery variable for the

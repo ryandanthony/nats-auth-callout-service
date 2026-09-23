@@ -2,7 +2,7 @@ schemaVersion: 1
 name: tasks
 targetAccount: TASKS
 issuer:
-  authority: https://localhost:8081/realms/dev
+  authority: https://localhost:8083/realms/dev
   jwksCache: 5m
   validateAudience: true
   audience: [nats]

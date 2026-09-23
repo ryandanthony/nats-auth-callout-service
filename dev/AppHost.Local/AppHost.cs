@@ -27,15 +27,16 @@ var nats = builder.AddContainer("nats", "nats", "2.14")
     });
 
 // Keycloak dev IdP, importing the committed dev realm (clients/roles/users for both
-// samples, dev-only credentials - see dev/README.md). 8081 on the host: 8080 is
+// samples, dev-only credentials - see dev/README.md). 8083 on the host: 8080 is
 // AuthCallout.Host's own pinned D21 health port, which the callout project binds directly
-// via Kestrel (not through an Aspire-managed endpoint), so Keycloak must not claim it.
+// via Kestrel (not through an Aspire-managed endpoint), so Keycloak must not claim it; 8081
+// and 8082 can be taken by other local processes, so this loop uses 8083.
 // Aspire's own AddKeycloak switches the endpoint to https automatically in run mode when a
 // dev HTTPS cert is available (ASP.NET Core's dotnet dev-certs), which is what makes the
 // issuer authority satisfy Microsoft.IdentityModel's HttpDocumentRetriever.RequireHttps
 // (P06/P08's production JWKS fetch path never relaxes this - see dev/README.md's "Keycloak
 // must be served over HTTPS" note for what breaks without it).
-var keycloak = builder.AddKeycloak("idp", 8081)
+var keycloak = builder.AddKeycloak("idp", 8083)
     .WithRealmImport("./realm");
 
 var callout = builder.AddProject<Projects.AuthCallout_Host>("callout")

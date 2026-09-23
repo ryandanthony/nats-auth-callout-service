@@ -47,7 +47,7 @@ a `notes` token never yields `tasks.>` and vice versa.
   `RequireHttps` on unconditionally — including here in dev — because P06/P08
   never relax it for a "trusted" issuer. If Keycloak ends up serving plain
   HTTP (no cert trusted), JWKS prewarm fails and the callout never leaves
-  `Starting` state. If port `8081` (`AppHost.Local`) or `8082`
+  `Starting` state. If port `8083` (`AppHost.Local`) or `8082`
   (`AppHost.K8s`) is already bound by something else on your machine, stop
   that first — Keycloak's container will still start, but the AppHost's own
   DCP tunnel proxy silently can't forward the host port and everything hangs
@@ -62,7 +62,7 @@ dotnet run --project dev/AppHost.Local
 ```
 
 Starts, in order: NATS (JetStream, external port `4222`), Keycloak (dev
-realm import from `AppHost.Local/realm/dev-realm.json`, host port `8081`),
+realm import from `AppHost.Local/realm/dev-realm.json`, host port `8083`),
 `AuthCallout.Host` (files source, `Source__Kind` implied by
 `config/bootstrap.yaml`, config directory `AppHost.Local/config/apps/`), then
 `NoteService` and `TaskService`.
@@ -184,10 +184,10 @@ jsonpath='{.status}'` shows the status write-back (`observedGeneration`,
 Both samples fetch their own token via the Resource Owner Password grant
 (`DevOidcTokenFetcher`, dev-only — a real client would use a browser
 redirect flow). To do the same from a shell against either loop's Keycloak
-(swap the port: `8081` for `AppHost.Local`, `8082` for `AppHost.K8s`):
+(swap the port: `8083` for `AppHost.Local`, `8082` for `AppHost.K8s`):
 
 ```
-curl -sk https://localhost:8081/realms/dev/protocol/openid-connect/token \
+curl -sk https://localhost:8083/realms/dev/protocol/openid-connect/token \
   -d grant_type=password \
   -d client_id=notes-web \
   -d username=note-user \
