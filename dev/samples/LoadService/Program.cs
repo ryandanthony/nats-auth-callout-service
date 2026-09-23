@@ -44,11 +44,11 @@ Console.CancelKeyPress += (_, e) =>
     stopSignal.Cancel();
 };
 
-// Fetch one token + connection options through the callout (same public client + dev user as
-// NoteService). This first connect is itself a callout request; the loop reuses the options.
+// Each worker fetches its own token once at startup, so its connections carry a distinct jti
+// (the callout's identity self-lookup key, doc 07) and never contend on a single hot KV key —
+// exactly like distinct real clients, which is what this load test should model. Re-minting is
+// per worker at startup, not per connect, so it stresses the callout, not Keycloak.
 using var startupCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-var connection = await CalloutConnection.PrepareAsync(
-    AppSlug, clientId: "notes-web", username: "note-user", password: "note-pass", startupCts.Token);
 
 var totalConnects = 0L;
 var totalFailures = 0L;
@@ -60,7 +60,7 @@ await Console.Out.WriteLineAsync(
 var workers = new Task[concurrency + 1];
 for (var i = 0; i < concurrency; i++)
 {
-    workers[i] = DriveAsync(connection.Options, delay, lifetime.Token);
+    workers[i] = DriveAsync(delay, startupCts.Token, lifetime.Token);
 }
 
 workers[concurrency] = ReportAsync(lifetime.Token);
@@ -73,13 +73,26 @@ await Console.Out.WriteLineAsync(
 
 return;
 
-// Opens a fresh connection each iteration (= a fresh callout auth request), records the
-// outcome, and pauses by the configured delay. Runs until cancelled.
-async Task DriveAsync(NatsOpts opts, TimeSpan loopDelay, CancellationToken cancellationToken)
+// Fetches this worker's own token/connection options once (a distinct jti so it never shares a
+// self-lookup key with other workers), then opens a fresh connection each iteration (= a fresh
+// callout auth request), records the outcome, and pauses by the configured delay.
+async Task DriveAsync(TimeSpan loopDelay, CancellationToken startupToken, CancellationToken cancellationToken)
 {
+    CalloutConnectionInfo connection;
+    try
+    {
+        connection = await CalloutConnection.PrepareAsync(
+            AppSlug, clientId: "notes-web", username: "note-user", password: "note-pass", startupToken);
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException)
+    {
+        await Console.Error.WriteLineAsync($"LoadService: worker token fetch failed ({ex.GetType().Name}: {ex.Message}); worker idle.");
+        return;
+    }
+
     while (!cancellationToken.IsCancellationRequested)
     {
-        var connected = await TryConnectOnceAsync(opts, cancellationToken);
+        var connected = await TryConnectOnceAsync(connection.Options, cancellationToken);
         Interlocked.Increment(ref connected ? ref totalConnects : ref totalFailures);
 
         // On a failure, back off a little so a persistent error doesn't spin the CPU; otherwise

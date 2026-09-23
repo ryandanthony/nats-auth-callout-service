@@ -44,6 +44,23 @@ public static class CalloutResponderMetrics
     public const string DurationHistogramName = "callout_request_duration_seconds";
 #pragma warning restore S2339
 
+    private const double MillisecondsPerSecond = 1000d;
+
+    private static readonly double[] DurationBucketBoundariesMilliseconds =
+        [0.5, 1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000];
+
+    /// <summary>
+    /// Explicit bucket boundaries (seconds) for the <see cref="RequestDuration"/> histogram, for
+    /// the Host to install as an OTel <c>Explicit Bucket Histogram</c> view (the SDK default
+    /// buckets top out coarsely — 0, 5, 10, 25, 50, 75... ms then jump — which is why the
+    /// dashboard shows the whole distribution collapsed into a single low bucket with a 5s+
+    /// tail). Declared in milliseconds (the natural unit for these sub-ms-to-low-ms latencies,
+    /// with headroom up to the per-request timeout) and converted to the histogram's seconds
+    /// unit, so the boundaries read as intent rather than a wall of decimal literals.
+    /// </summary>
+    public static IReadOnlyList<double> DurationBucketBoundariesSeconds { get; } =
+        DurationBucketBoundariesMilliseconds.Select(static ms => ms / MillisecondsPerSecond).ToArray();
+
     private static readonly Meter Meter = new(MeterName);
 
     /// <summary>Gets the counter incremented once per request the callout granted and replied to (success).</summary>
