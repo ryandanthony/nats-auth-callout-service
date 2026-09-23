@@ -405,47 +405,6 @@ public sealed class CalloutResponderTests
         Assert.Contains(harness.Diagnostics, d => d.Contains("xkey is configured", StringComparison.OrdinalIgnoreCase));
     }
 
-    // ---- per-decision logging (P13 wires onDecision to its logger) ----
-
-    [Fact]
-    public async Task RunAsync_GrantedDecision_LogsValueFreeGrantSummary()
-    {
-        var pipeline = Substitute.For<IResolutionPipeline>();
-        pipeline.ResolveAsync(Arg.Any<AuthRequest>(), Arg.Any<ActiveConfig>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<Decision>(CalloutTestBuilders.Granted()));
-
-        var harness = new ResponderHarness(new ResponderHarnessOptions { Pipeline = pipeline });
-
-        await harness.RunOneAsync(CalloutTestBuilders.BuildRequestPayload());
-
-        Assert.Contains(harness.Decisions, d => d.StartsWith("Granted:", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public async Task RunAsync_DeniedDecision_LogsValueFreeDenySummaryWithReason()
-    {
-        var pipeline = Substitute.For<IResolutionPipeline>();
-        pipeline.ResolveAsync(Arg.Any<AuthRequest>(), Arg.Any<ActiveConfig>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<Decision>(CalloutTestBuilders.Denied()));
-
-        var harness = new ResponderHarness(new ResponderHarnessOptions { Pipeline = pipeline });
-
-        await harness.RunOneAsync(CalloutTestBuilders.BuildRequestPayload());
-
-        Assert.Contains(harness.Decisions, d => d.StartsWith("Denied:", StringComparison.Ordinal) && d.Contains("reason=", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public async Task RunAsync_DroppedRequest_LogsNoDecision()
-    {
-        var harness = new ResponderHarness();
-
-        await harness.RunOneAsync(Encoding.UTF8.GetBytes("not a valid nats jwt"));
-
-        harness.AssertNeverReplied();
-        Assert.Empty(harness.Decisions);
-    }
-
     // ---- per-decision success/failure metrics (callout method invoked) ----
 
     [Fact]

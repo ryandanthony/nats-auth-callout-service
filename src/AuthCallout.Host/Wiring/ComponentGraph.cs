@@ -95,8 +95,7 @@ public static class ComponentGraph
         var responder = new CalloutResponder(
             responderDependencies,
             responderOptions,
-            onDiagnostic: static msg => Console.Error.WriteLine($"DIAG: {msg}"),
-            onDecision: static msg => Console.Out.WriteLine($"INFO: callout handled request. {msg}"));
+            onDiagnostic: static msg => Console.Error.WriteLine($"DIAG: {msg}"));
 
         var connectionManager = new NatsConnectionManager(
             natsConnection, responder, stateMachine, onDiagnostic: static msg => Console.Error.WriteLine($"INFO: {msg}"));

@@ -25,7 +25,6 @@ internal sealed class ResponderHarness
     private readonly INatsConnection _connection;
     private readonly List<byte[]> _replies = [];
     private readonly System.Collections.Concurrent.ConcurrentQueue<string> _diagnostics = new();
-    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _decisions = new();
 
     public ResponderHarness(ResponderHarnessOptions? harnessOptions = null)
     {
@@ -40,7 +39,7 @@ internal sealed class ResponderHarness
 
         var dependencies = new CalloutResponderDependencies(
             effectivePipeline, effectiveActiveConfigSource, effectiveMinter, effectiveCrypto, effectiveIdentityStoreWriter, effectiveEventEmitter);
-        _responder = new CalloutResponder(dependencies, effectiveOptions, onDiagnostic: _diagnostics.Enqueue, onDecision: _decisions.Enqueue, timeProvider: effective.TimeProvider);
+        _responder = new CalloutResponder(dependencies, effectiveOptions, onDiagnostic: _diagnostics.Enqueue, timeProvider: effective.TimeProvider);
 
         _connection = effective.Connection ?? Substitute.For<INatsConnection>();
         if (effective.Connection is null)
@@ -52,8 +51,6 @@ internal sealed class ResponderHarness
     public int ReplyCount => _replies.Count;
 
     public IReadOnlyCollection<string> Diagnostics => _diagnostics;
-
-    public IReadOnlyCollection<string> Decisions => _decisions;
 
     /// <summary>Builds a minimal, valid <see cref="CalloutResponderDependencies"/> for constructor-validation tests that never actually run a request.</summary>
     public static CalloutResponderDependencies BuildDependencies() => new(

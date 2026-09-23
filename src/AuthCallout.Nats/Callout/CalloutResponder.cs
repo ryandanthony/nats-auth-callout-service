@@ -48,7 +48,6 @@ public sealed class CalloutResponder
     private readonly CalloutResponderDependencies _dependencies;
     private readonly CalloutResponderOptions _options;
     private readonly Action<string>? _onDiagnostic;
-    private readonly Action<string>? _onDecision;
     private readonly TimeProvider _timeProvider;
 
     /// <summary>Initializes a new instance of the <see cref="CalloutResponder"/> class.</summary>
@@ -61,16 +60,6 @@ public sealed class CalloutResponder
     /// dropped. Never called with token, claim, or secret material. Callers (P13) may wire
     /// this to their logger.
     /// </param>
-    /// <param name="onDecision">
-    /// Invoked once per request that produced a reply, with a human-readable, value-free
-    /// summary of the decision (grant/deny, application, principal, profile/deny reason) after
-    /// the reply has been sent. This is the per-message "handled" log the responder is
-    /// otherwise silent about on the success path. Optional; when null, decisions are not
-    /// logged. Never called with token or secret material (only the same
-    /// principal/application/issuer fields the outcome event already carries, ADR 0008).
-    /// Requests that never reply (malformed, xkey mismatch, timeout) go through
-    /// <paramref name="onDiagnostic"/> instead, not here.
-    /// </param>
     /// <param name="timeProvider">
     /// The monotonic time source for the per-request duration metric
     /// (<see cref="CalloutResponderMetrics.RequestDuration"/>), read via
@@ -82,7 +71,6 @@ public sealed class CalloutResponder
         CalloutResponderDependencies dependencies,
         CalloutResponderOptions options,
         Action<string>? onDiagnostic = null,
-        Action<string>? onDecision = null,
         TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(dependencies);
@@ -93,7 +81,6 @@ public sealed class CalloutResponder
         _dependencies = dependencies;
         _options = options;
         _onDiagnostic = onDiagnostic;
-        _onDecision = onDecision;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -186,10 +173,9 @@ public sealed class CalloutResponder
         await ReplyAsync(msg, request, decision, envelope.ServerXkeyPublic, cancellationToken);
 
         // The reply is out: record the success/failure metric for the callout method being
-        // invoked (a grant is a success, a denial a failure), the receive-to-reply duration,
-        // and log the value-free decision summary. All are strictly after the reply, on the
-        // same no-secret basis as the event.
-        RecordAndLogDecision(decision, startTimestamp);
+        // invoked (a grant is a success, a denial a failure) and the receive-to-reply duration,
+        // strictly after the reply.
+        RecordDecision(decision, startTimestamp);
 
         // Fire-and-forget, strictly after the reply: IEventEmitter.EmitAsync is documented
         // never to throw (ADR 0008), so this is not awaited and never delays or risks the
@@ -204,25 +190,21 @@ public sealed class CalloutResponder
         _onDiagnostic?.Invoke(reason);
     }
 
-    /// <summary>Records the grant/deny outcome metric, the receive-to-reply duration, and logs a value-free decision summary, strictly after the reply has been sent.</summary>
-    private void RecordAndLogDecision(Decision decision, long startTimestamp)
+    /// <summary>Records the grant/deny outcome metric and the receive-to-reply duration, strictly after the reply has been sent.</summary>
+    private void RecordDecision(Decision decision, long startTimestamp)
     {
         var elapsedSeconds = _timeProvider.GetElapsedTime(startTimestamp).TotalSeconds;
         switch (decision)
         {
-            case GrantedDecision granted:
+            case GrantedDecision:
             {
                 CalloutResponderMetrics.RecordGranted(elapsedSeconds);
-                _onDecision?.Invoke(
-                    $"Granted: app={granted.Application ?? "<anonymous>"} principal={granted.Principal ?? "<none>"} profile={granted.ProfileName ?? "<anonymous>"} propagation={granted.IdentityPropagationEnabled}.");
                 break;
             }
 
-            case DeniedDecision denied:
+            case DeniedDecision:
             {
                 CalloutResponderMetrics.RecordDenied(elapsedSeconds);
-                _onDecision?.Invoke(
-                    $"Denied: app={denied.Application ?? "<none>"} principal={denied.Principal ?? "<none>"} reason={denied.Reason}.");
                 break;
             }
 
