@@ -115,6 +115,75 @@ public sealed class KvIdentityStoreWriterTests
     }
 
     [Fact]
+    public async Task WriteAsync_AssertionKeyAlreadyExists_PurgesAndReplaces_Succeeds()
+    {
+        // The self-lookup key collides when a client reconnects on the stable-sub path (doc 07).
+        // The first TryCreate reports the key already present (a NatsKVCreateException); the
+        // writer must purge and retry rather than fail the grant.
+        var tokenStore = Substitute.For<INatsKVStore>();
+        var assertionStore = Substitute.For<INatsKVStore>();
+        var attempts = 0;
+        assertionStore
+            .TryCreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<NatsResult<ulong>>(
+                Interlocked.Increment(ref attempts) == 1
+                    ? new NatsResult<ulong>(new NatsKVCreateException())
+                    : new NatsResult<ulong>(1UL)));
+        var kvContext = ContextReturning(tokenStore, assertionStore);
+        var signer = SignerReturning(new SignedAssertion("header.payload.sig", "kid-1"));
+        var writer = new KvIdentityStoreWriter(kvContext, signer, Substitute.For<ISecretResolver>(), FixedTimeProvider());
+        var grant = IdentityTestBuilders.GrantFor("notes", propagationEnabled: true, selfLookupKey: "jti-1", FixedNow.AddMinutes(5));
+
+        var result = await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        await assertionStore.Received(1).PurgeAsync(Arg.Any<string>(), cancellationToken: Arg.Any<CancellationToken>());
+        Assert.Equal(2, attempts);
+    }
+
+    [Fact]
+    public async Task WriteAsync_AssertionKeyStaysContended_TreatedAsSuccess_NeverFailsClosedOnContention()
+    {
+        // Every TryCreate collides (another same-principal racer keeps winning the key). The
+        // writer exhausts its bounded retry budget and treats the persistent collision as
+        // success, because the racer stored an equally-valid assertion for the same principal.
+        var tokenStore = Substitute.For<INatsKVStore>();
+        var assertionStore = Substitute.For<INatsKVStore>();
+        assertionStore
+            .TryCreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<NatsResult<ulong>>(new NatsResult<ulong>(new NatsKVCreateException())));
+        var kvContext = ContextReturning(tokenStore, assertionStore);
+        var signer = SignerReturning(new SignedAssertion("header.payload.sig", "kid-1"));
+        var writer = new KvIdentityStoreWriter(kvContext, signer, Substitute.For<ISecretResolver>(), FixedTimeProvider());
+        var grant = IdentityTestBuilders.GrantFor("notes", propagationEnabled: true, selfLookupKey: "jti-1", FixedNow.AddMinutes(5));
+
+        var result = await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task WriteAsync_AssertionTryCreateReturnsNonCreateError_FailsClosed()
+    {
+        // A non-collision error from the assertion write (e.g. KV unavailable) is a real
+        // failure and must fail the grant closed, not be swallowed by the replace retry.
+        var tokenStore = Substitute.For<INatsKVStore>();
+        var assertionStore = Substitute.For<INatsKVStore>();
+        assertionStore
+            .TryCreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<NatsResult<ulong>>(new NatsResult<ulong>(new NatsException("kv unavailable"))));
+        var kvContext = ContextReturning(tokenStore, assertionStore);
+        var signer = SignerReturning(new SignedAssertion("header.payload.sig", "kid-1"));
+        var writer = new KvIdentityStoreWriter(kvContext, signer, Substitute.For<ISecretResolver>(), FixedTimeProvider());
+        var grant = IdentityTestBuilders.GrantFor("notes", propagationEnabled: true, selfLookupKey: "jti-1", FixedNow.AddMinutes(5));
+
+        var result = await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        await assertionStore.DidNotReceiveWithAnyArgs().PurgeAsync(default!, cancellationToken: default);
+    }
+
+    [Fact]
     public async Task WriteAsync_PropagationEnabled_SignsAssertionWithConnectionIdSubjectAppIssuerExpiry()
     {
         var tokenStore = Substitute.For<INatsKVStore>();
