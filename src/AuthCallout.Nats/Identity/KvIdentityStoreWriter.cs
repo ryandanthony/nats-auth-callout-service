@@ -8,7 +8,6 @@ using System.Linq;
 using AuthCallout.Contracts.Config;
 using AuthCallout.Contracts.Decisions;
 using AuthCallout.Contracts.Seams;
-using AuthCallout.Nats.Callout;
 using NATS.Client.KeyValueStore;
 
 namespace AuthCallout.Nats.Identity;
@@ -101,28 +100,15 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
         {
             var slug = AppSlug.From(grant.Application!);
             var connectionId = ConnectionIdGenerator.NewId();
-
-            using (CalloutActivitySource.StartStage("kv.oidc_token.write"))
-            {
-                var tokenStore = await _stores.GetAsync(slug.OidcTokensBucket, cancellationToken);
-                await tokenStore.CreateAsync(connectionId, rawOidcToken, ttl, cancellationToken: cancellationToken);
-            }
-
             var claims = new AssertionClaims(connectionId, grant.Principal!, slug.Value, grant.Issuer!, grant.Expiry);
             var signed = _assertionSigner.Sign(claims);
+            var tokenStore = await _stores.GetAsync(slug.OidcTokensBucket, cancellationToken);
+            var assertionKey = AppSlug.DeriveKeySegment(grant.SelfLookupKey);
 
-            using (CalloutActivitySource.StartStage("kv.assertion.write"))
-            {
-                // Last-writer-wins single put (see KvTtlPut). The self-lookup key legitimately
-                // collides: the same token (same jti) can open many connections, and a
-                // reconnecting client's sub is stable on the doc 07 fallback path, so a stale
-                // assertion for a superseded connection must be replaced, never kept. The previous
-                // TryCreate/TryGetEntry/Purge/TryCreate replace loop converged to the same
-                // last-writer-wins state but cost 3-4 extra round trips per collision (measured at
-                // 15-26ms of a 22-31ms request under load).
-                var assertionKey = AppSlug.DeriveKeySegment(grant.SelfLookupKey);
-                await KvTtlPut.PutAsync(_kvContext.JetStreamContext, slug.AssertionsBucket, assertionKey, signed.CompactJwt, ttl, cancellationToken);
-            }
+            await IdentityRecordWriter.WriteBothAsync(
+                _kvContext.JetStreamContext,
+                new IdentityRecordWrite(tokenStore, connectionId, rawOidcToken, slug.AssertionsBucket, assertionKey, signed.CompactJwt, ttl),
+                cancellationToken);
 
             return new IdentityStoreWriteResult(Succeeded: true, ConnectionId: connectionId);
         }

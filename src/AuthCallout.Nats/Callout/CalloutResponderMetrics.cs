@@ -50,7 +50,7 @@ public static class CalloutResponderMetrics
         [0.5, 1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000];
 
     /// <summary>
-    /// Explicit bucket boundaries (seconds) for the <see cref="RequestDuration"/> histogram, for
+    /// Gets the explicit bucket boundaries (seconds) for the <see cref="RequestDuration"/> histogram, for
     /// the Host to install as an OTel <c>Explicit Bucket Histogram</c> view (the SDK default
     /// buckets top out coarsely — 0, 5, 10, 25, 50, 75... ms then jump — which is why the
     /// dashboard shows the whole distribution collapsed into a single low bucket with a 5s+
@@ -58,6 +58,7 @@ public static class CalloutResponderMetrics
     /// with headroom up to the per-request timeout) and converted to the histogram's seconds
     /// unit, so the boundaries read as intent rather than a wall of decimal literals.
     /// </summary>
+    /// <value>The explicit bucket boundaries, in seconds.</value>
     public static IReadOnlyList<double> DurationBucketBoundariesSeconds { get; } =
         DurationBucketBoundariesMilliseconds.Select(static ms => ms / MillisecondsPerSecond).ToArray();
 

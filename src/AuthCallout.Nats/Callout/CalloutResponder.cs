@@ -205,16 +205,16 @@ public sealed class CalloutResponder
         switch (decision)
         {
             case GrantedDecision:
-            {
-                CalloutResponderMetrics.RecordGranted(elapsedSeconds);
-                break;
-            }
+                {
+                    CalloutResponderMetrics.RecordGranted(elapsedSeconds);
+                    break;
+                }
 
             case DeniedDecision:
-            {
-                CalloutResponderMetrics.RecordDenied(elapsedSeconds);
-                break;
-            }
+                {
+                    CalloutResponderMetrics.RecordDenied(elapsedSeconds);
+                    break;
+                }
 
             default:
                 throw new InvalidOperationException("Unrecognized Decision subtype; expected GrantedDecision or DeniedDecision.");

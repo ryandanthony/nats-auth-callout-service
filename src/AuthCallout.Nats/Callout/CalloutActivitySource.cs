@@ -42,6 +42,20 @@ public static class CalloutActivitySource
     /// <returns>The started span, to dispose when the stage finishes; null when tracing is off.</returns>
     internal static Activity? StartStage(string stageName) => Instance.StartActivity(stageName);
 
+    /// <summary>
+    /// Starts a child span for one request stage under an explicit parent rather than the
+    /// ambient <see cref="Activity.Current"/>. Needed when two stages run concurrently
+    /// (<c>Task.WhenAll</c>): starting the second span while the first is still current would
+    /// ambiently nest it under the first (sibling stages, not parent/child) instead of under
+    /// their shared parent, because <see cref="ActivitySource.StartActivity(string, ActivityKind)"/>
+    /// always parents to whatever is current at the moment it is called.
+    /// </summary>
+    /// <param name="stageName">The stage span name.</param>
+    /// <param name="parentContext">The parent span's context, captured before starting any concurrent children.</param>
+    /// <returns>The started span, to dispose when the stage finishes; null when tracing is off.</returns>
+    internal static Activity? StartStage(string stageName, ActivityContext parentContext) =>
+        Instance.StartActivity(stageName, ActivityKind.Internal, parentContext);
+
     /// <summary>Runs <paramref name="stage"/> inside a child span named <paramref name="stageName"/>.</summary>
     /// <typeparam name="T">The stage result type.</typeparam>
     /// <param name="stageName">The stage span name.</param>
@@ -60,6 +74,17 @@ public static class CalloutActivitySource
     internal static async Task TraceStageAsync(string stageName, Func<Task> stage)
     {
         using var span = StartStage(stageName);
+        await stage();
+    }
+
+    /// <summary>Runs <paramref name="stage"/> inside a child span under an explicit parent context (see <see cref="StartStage(string, ActivityContext)"/>). For stages run concurrently with a sibling.</summary>
+    /// <param name="stageName">The stage span name.</param>
+    /// <param name="parentContext">The parent span's context.</param>
+    /// <param name="stage">The stage body.</param>
+    /// <returns>A task that completes when the stage does.</returns>
+    internal static async Task TraceStageAsync(string stageName, ActivityContext parentContext, Func<Task> stage)
+    {
+        using var span = StartStage(stageName, parentContext);
         await stage();
     }
 
