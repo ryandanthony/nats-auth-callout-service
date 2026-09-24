@@ -28,14 +28,6 @@ namespace AuthCallout.Nats.Identity;
 /// </summary>
 public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
 {
-    /// <summary>
-    /// The bounded retry budget for the assertion self-lookup-key replace race (see
-    /// <see cref="CreateOrReplaceAsync"/>). Small on purpose: a handful of attempts absorbs the
-    /// realistic burst of same-principal reconnects without turning a hot key into an unbounded
-    /// purge/create spin under pathological contention.
-    /// </summary>
-    private const int MaxReplaceAttempts = 5;
-
     private readonly INatsKVContext _kvContext;
     private readonly IAssertionSigner _assertionSigner;
     private readonly ISecretResolver _secretResolver;
@@ -43,6 +35,7 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
     private readonly BucketProvisioner _bucketProvisioner;
     private readonly KeysPublisher _keysPublisher;
     private readonly DiscoveryPublisher _discoveryPublisher;
+    private readonly KvStoreCache _stores;
 
     /// <summary>Initializes a new instance of the <see cref="KvIdentityStoreWriter"/> class.</summary>
     /// <param name="kvContext">The KV context every store/publish operation runs against (the callout's own connection).</param>
@@ -68,11 +61,15 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
         _bucketProvisioner = new BucketProvisioner(kvContext, onOrphanedBucket);
         _keysPublisher = new KeysPublisher(kvContext);
         _discoveryPublisher = new DiscoveryPublisher(kvContext);
+        _stores = new KvStoreCache(kvContext);
     }
 
     /// <inheritdoc />
-    public Task ProvisionBucketsAsync(RoutingConfig routing, CancellationToken cancellationToken) =>
-        _bucketProvisioner.ProvisionAsync(routing, cancellationToken);
+    public async Task ProvisionBucketsAsync(RoutingConfig routing, CancellationToken cancellationToken)
+    {
+        await _bucketProvisioner.ProvisionAsync(routing, cancellationToken);
+        _stores.Clear();
+    }
 
     /// <inheritdoc />
     public async Task<IdentityStoreWriteResult> WriteAsync(GrantedDecision grant, string rawOidcToken, CancellationToken cancellationToken)
@@ -107,7 +104,7 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
 
             using (CalloutActivitySource.StartStage("kv.oidc_token.write"))
             {
-                var tokenStore = await _kvContext.GetStoreAsync(slug.OidcTokensBucket, cancellationToken);
+                var tokenStore = await _stores.GetAsync(slug.OidcTokensBucket, cancellationToken);
                 await tokenStore.CreateAsync(connectionId, rawOidcToken, ttl, cancellationToken: cancellationToken);
             }
 
@@ -116,9 +113,15 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
 
             using (CalloutActivitySource.StartStage("kv.assertion.write"))
             {
-                var assertionStore = await _kvContext.GetStoreAsync(slug.AssertionsBucket, cancellationToken);
+                // Last-writer-wins single put (see KvTtlPut). The self-lookup key legitimately
+                // collides: the same token (same jti) can open many connections, and a
+                // reconnecting client's sub is stable on the doc 07 fallback path, so a stale
+                // assertion for a superseded connection must be replaced, never kept. The previous
+                // TryCreate/TryGetEntry/Purge/TryCreate replace loop converged to the same
+                // last-writer-wins state but cost 3-4 extra round trips per collision (measured at
+                // 15-26ms of a 22-31ms request under load).
                 var assertionKey = AppSlug.DeriveKeySegment(grant.SelfLookupKey);
-                await CreateOrReplaceAsync(assertionStore, assertionKey, signed.CompactJwt, ttl, cancellationToken);
+                await KvTtlPut.PutAsync(_kvContext.JetStreamContext, slug.AssertionsBucket, assertionKey, signed.CompactJwt, ttl, cancellationToken);
             }
 
             return new IdentityStoreWriteResult(Succeeded: true, ConnectionId: connectionId);
@@ -142,44 +145,5 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
 
         var currentKid = resolvedKeys.FirstOrDefault(static k => k.Active)?.Kid;
         await _discoveryPublisher.PublishAsync(config.Routing, currentKid, cancellationToken);
-    }
-
-    /// <summary>
-    /// Writes <paramref name="value"/> at <paramref name="key"/>, replacing any existing entry
-    /// (the self-lookup key collides on the sub-fallback path — doc 07: jti is unique per token,
-    /// but a reconnecting client's sub is stable — unlike the always-fresh generated connection
-    /// id, so a stale assertion for a superseded connection must not stay readable under the same
-    /// key). Concurrency-safe: several connections presenting the same token (same sub) can race
-    /// this key at once, so it never issues an unconditional <c>CreateAsync</c> that would throw
-    /// when another writer recreated the key in between. Each attempt is a <c>TryCreate</c>; on a
-    /// create-collision it purges and retries, last-writer-wins, up to <see cref="MaxReplaceAttempts"/>
-    /// times. A create-collision that persists past the retry budget is treated as success: a
-    /// concurrent writer stored an equally-valid assertion for the same principal under this key,
-    /// which is exactly what this write would have produced.
-    /// </summary>
-    private static async Task CreateOrReplaceAsync(INatsKVStore store, string key, string value, TimeSpan ttl, CancellationToken cancellationToken)
-    {
-        for (var attempt = 0; attempt < MaxReplaceAttempts; attempt++)
-        {
-            var result = await store.TryCreateAsync(key, value, ttl, cancellationToken: cancellationToken);
-            if (result.Success)
-            {
-                return;
-            }
-
-            if (result.Error is not NatsKVCreateException)
-            {
-                throw result.Error;
-            }
-
-            // Key already present (a prior connection, or a concurrent racer). Remove it and
-            // loop: the next TryCreate either wins the now-empty key or collides again with a
-            // newer racer, in which case we retry until the budget is exhausted.
-            await store.PurgeAsync(key, cancellationToken: cancellationToken);
-        }
-
-        // Budget exhausted: another writer keeps winning the key. Since every racer writes a
-        // valid assertion for the same principal, their entry is an acceptable substitute for
-        // ours — treat this as success rather than failing the grant closed over pure contention.
     }
 }

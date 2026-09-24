@@ -8,6 +8,8 @@ using AuthCallout.Contracts.Config;
 using AuthCallout.Contracts.Seams;
 using AuthCallout.Nats.Identity;
 using NATS.Client.Core;
+using NATS.Client.JetStream;
+using NATS.Client.JetStream.Models;
 using NATS.Client.KeyValueStore;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -81,7 +83,7 @@ public sealed class KvIdentityStoreWriterTests
     }
 
     [Fact]
-    public async Task WriteAsync_PropagationEnabled_ReadsAndWritesFromCorrectPhysicalBuckets()
+    public async Task WriteAsync_PropagationEnabled_WritesTokenToCorrectPhysicalBucket()
     {
         var tokenStore = Substitute.For<INatsKVStore>();
         var assertionStore = Substitute.For<INatsKVStore>();
@@ -93,15 +95,14 @@ public sealed class KvIdentityStoreWriterTests
         await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
 
         await kvContext.Received(1).GetStoreAsync("callout_apps_notes_oidc_tokens", Arg.Any<CancellationToken>());
-        await kvContext.Received(1).GetStoreAsync("callout_apps_notes_assertions", Arg.Any<CancellationToken>());
+        await tokenStore.Received(1).CreateAsync(
+            Arg.Any<string>(), "raw-oidc-token", Arg.Any<TimeSpan>(), cancellationToken: Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task WriteAsync_PropagationEnabled_WritesAssertionAtSanitizedSelfLookupKey()
+    public async Task WriteAsync_PropagationEnabled_PutsAssertionAtSanitizedSelfLookupKeyInAssertionsBucket()
     {
-        var tokenStore = Substitute.For<INatsKVStore>();
-        var assertionStore = Substitute.For<INatsKVStore>();
-        var kvContext = ContextReturning(tokenStore, assertionStore);
+        var kvContext = ContextReturning(Substitute.For<INatsKVStore>(), Substitute.For<INatsKVStore>());
         var signer = SignerReturning(new SignedAssertion("header.payload.sig", "kid-1"));
         var writer = new KvIdentityStoreWriter(kvContext, signer, Substitute.For<ISecretResolver>(), FixedTimeProvider());
         // ADR 0013 key derivation: sanitized (lowercase/underscore) plus a 16-hex SHA-256
@@ -110,69 +111,114 @@ public sealed class KvIdentityStoreWriterTests
 
         await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
 
-        await assertionStore.Received(1).TryCreateAsync(
-            AppSlug.DeriveKeySegment("JTI.With Spaces"), "header.payload.sig", TimeSpan.FromMinutes(5), cancellationToken: Arg.Any<CancellationToken>());
+        await kvContext.JetStreamContext.Received(1).PublishAsync(
+            $"$KV.callout_apps_notes_assertions.{AppSlug.DeriveKeySegment("JTI.With Spaces")}",
+            "header.payload.sig",
+            Arg.Any<INatsSerialize<string>?>(),
+            Arg.Any<NatsJSPubOpts?>(),
+            Arg.Any<NatsHeaders?>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task WriteAsync_AssertionKeyAlreadyExists_PurgesAndReplaces_Succeeds()
+    public async Task WriteAsync_AssertionPut_CarriesPerMessageTtlExactlyExpMinusNow_InWholeSeconds()
     {
-        // The self-lookup key collides when a client reconnects on the stable-sub path (doc 07).
-        // The first TryCreate reports the key already present (a NatsKVCreateException); the
-        // writer must purge and retry rather than fail the grant.
-        var tokenStore = Substitute.For<INatsKVStore>();
+        // D17: TTL = exp - now, no clamp, formatted the same way the KV client formats the
+        // token record's own Nats-TTL header (whole seconds + "s") so both records expire together.
+        var kvContext = ContextReturning(Substitute.For<INatsKVStore>(), Substitute.For<INatsKVStore>());
+        var signer = SignerReturning(new SignedAssertion("header.payload.sig", "kid-1"));
+        var writer = new KvIdentityStoreWriter(kvContext, signer, Substitute.For<ISecretResolver>(), FixedTimeProvider());
+        var grant = IdentityTestBuilders.GrantFor("notes", propagationEnabled: true, selfLookupKey: "jti-1", FixedNow.AddMinutes(7));
+
+        await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
+
+        await kvContext.JetStreamContext.Received(1).PublishAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<INatsSerialize<string>?>(),
+            Arg.Any<NatsJSPubOpts?>(),
+            Arg.Is<NatsHeaders?>(h => h != null && h["Nats-TTL"] == "420s"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task WriteAsync_ExistingAssertionAtSameKey_IsReplacedBySinglePut_NoPurgeOrRetry()
+    {
+        // The self-lookup key legitimately collides (same jti across connections of one token,
+        // or a stable sub on the fallback path, doc 07). A KV put is last-writer-wins by
+        // definition, so the replace is exactly one publish: no create-collision, get, or purge
+        // round trips (those were 15-26ms of every request under load).
         var assertionStore = Substitute.For<INatsKVStore>();
-        var attempts = 0;
-        assertionStore
-            .TryCreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), cancellationToken: Arg.Any<CancellationToken>())
-            .Returns(_ => new ValueTask<NatsResult<ulong>>(
-                Interlocked.Increment(ref attempts) == 1
-                    ? new NatsResult<ulong>(new NatsKVCreateException())
-                    : new NatsResult<ulong>(1UL)));
-        var kvContext = ContextReturning(tokenStore, assertionStore);
+        var kvContext = ContextReturning(Substitute.For<INatsKVStore>(), assertionStore);
         var signer = SignerReturning(new SignedAssertion("header.payload.sig", "kid-1"));
         var writer = new KvIdentityStoreWriter(kvContext, signer, Substitute.For<ISecretResolver>(), FixedTimeProvider());
         var grant = IdentityTestBuilders.GrantFor("notes", propagationEnabled: true, selfLookupKey: "jti-1", FixedNow.AddMinutes(5));
 
-        var result = await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
+        var first = await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
+        var second = await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
 
-        Assert.True(result.Succeeded);
-        await assertionStore.Received(1).PurgeAsync(Arg.Any<string>(), cancellationToken: Arg.Any<CancellationToken>());
-        Assert.Equal(2, attempts);
+        Assert.True(first.Succeeded);
+        Assert.True(second.Succeeded);
+        await kvContext.JetStreamContext.Received(2).PublishAsync(
+            $"$KV.callout_apps_notes_assertions.{AppSlug.DeriveKeySegment("jti-1")}",
+            Arg.Any<string>(),
+            Arg.Any<INatsSerialize<string>?>(),
+            Arg.Any<NatsJSPubOpts?>(),
+            Arg.Any<NatsHeaders?>(),
+            Arg.Any<CancellationToken>());
+        Assert.Empty(assertionStore.ReceivedCalls());
     }
 
     [Fact]
-    public async Task WriteAsync_AssertionKeyStaysContended_TreatedAsSuccess_NeverFailsClosedOnContention()
+    public async Task WriteAsync_RepeatedWrites_LookUpTokenStoreOnce_NotPerRequest()
     {
-        // Every TryCreate collides (another same-principal racer keeps winning the key). The
-        // writer exhausts its bounded retry budget and treats the persistent collision as
-        // success, because the racer stored an equally-valid assertion for the same principal.
-        var tokenStore = Substitute.For<INatsKVStore>();
-        var assertionStore = Substitute.For<INatsKVStore>();
-        assertionStore
-            .TryCreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), cancellationToken: Arg.Any<CancellationToken>())
-            .Returns(_ => new ValueTask<NatsResult<ulong>>(new NatsResult<ulong>(new NatsKVCreateException())));
-        var kvContext = ContextReturning(tokenStore, assertionStore);
+        // GetStoreAsync is a $JS.API.STREAM.INFO round trip; it must not run on every request.
+        var kvContext = ContextReturning(Substitute.For<INatsKVStore>(), Substitute.For<INatsKVStore>());
         var signer = SignerReturning(new SignedAssertion("header.payload.sig", "kid-1"));
         var writer = new KvIdentityStoreWriter(kvContext, signer, Substitute.For<ISecretResolver>(), FixedTimeProvider());
         var grant = IdentityTestBuilders.GrantFor("notes", propagationEnabled: true, selfLookupKey: "jti-1", FixedNow.AddMinutes(5));
 
-        var result = await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
+        for (var i = 0; i < 5; i++)
+        {
+            Assert.True((await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None)).Succeeded);
+        }
 
-        Assert.True(result.Succeeded);
+        await kvContext.Received(1).GetStoreAsync("callout_apps_notes_oidc_tokens", Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task WriteAsync_AssertionTryCreateReturnsNonCreateError_FailsClosed()
+    public async Task WriteAsync_StoreLookupFails_FailsClosed_AndIsRetriedOnNextRequest()
     {
-        // A non-collision error from the assertion write (e.g. KV unavailable) is a real
-        // failure and must fail the grant closed, not be swallowed by the replace retry.
+        // A failed lookup must fail that grant closed and must never be cached: the next
+        // request looks the store up again rather than reusing the failure.
         var tokenStore = Substitute.For<INatsKVStore>();
-        var assertionStore = Substitute.For<INatsKVStore>();
-        assertionStore
-            .TryCreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), cancellationToken: Arg.Any<CancellationToken>())
-            .Returns(_ => new ValueTask<NatsResult<ulong>>(new NatsResult<ulong>(new NatsException("kv unavailable"))));
-        var kvContext = ContextReturning(tokenStore, assertionStore);
+        var kvContext = ContextReturning(tokenStore, Substitute.For<INatsKVStore>());
+        var calls = 0;
+        kvContext.GetStoreAsync("callout_apps_notes_oidc_tokens", Arg.Any<CancellationToken>())
+            .Returns(_ => Interlocked.Increment(ref calls) == 1
+                ? ValueTask.FromException<INatsKVStore>(new NatsException("stream info failed"))
+                : ValueTask.FromResult(tokenStore));
+        var signer = SignerReturning(new SignedAssertion("header.payload.sig", "kid-1"));
+        var writer = new KvIdentityStoreWriter(kvContext, signer, Substitute.For<ISecretResolver>(), FixedTimeProvider());
+        var grant = IdentityTestBuilders.GrantFor("notes", propagationEnabled: true, selfLookupKey: "jti-1", FixedNow.AddMinutes(5));
+
+        var failed = await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
+        var retried = await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
+
+        Assert.False(failed.Succeeded);
+        Assert.True(retried.Succeeded);
+        Assert.Equal(2, calls);
+    }
+
+    [Fact]
+    public async Task WriteAsync_AssertionPutRejectedByServer_FailsClosed()
+    {
+        // A JetStream error ack (e.g. stream unavailable, TTL not enabled) is a real failure and
+        // must fail the grant closed.
+        var kvContext = ContextReturning(Substitute.For<INatsKVStore>(), Substitute.For<INatsKVStore>());
+        kvContext.JetStreamContext
+            .PublishAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<INatsSerialize<string>?>(), Arg.Any<NatsJSPubOpts?>(), Arg.Any<NatsHeaders?>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<PubAckResponse>(new PubAckResponse { Error = new ApiError { Code = 503, Description = "unavailable" } }));
         var signer = SignerReturning(new SignedAssertion("header.payload.sig", "kid-1"));
         var writer = new KvIdentityStoreWriter(kvContext, signer, Substitute.For<ISecretResolver>(), FixedTimeProvider());
         var grant = IdentityTestBuilders.GrantFor("notes", propagationEnabled: true, selfLookupKey: "jti-1", FixedNow.AddMinutes(5));
@@ -180,7 +226,22 @@ public sealed class KvIdentityStoreWriterTests
         var result = await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
 
         Assert.False(result.Succeeded);
-        await assertionStore.DidNotReceiveWithAnyArgs().PurgeAsync(default!, cancellationToken: default);
+    }
+
+    [Fact]
+    public async Task WriteAsync_AssertionPublishThrows_FailsClosed()
+    {
+        var kvContext = ContextReturning(Substitute.For<INatsKVStore>(), Substitute.For<INatsKVStore>());
+        kvContext.JetStreamContext
+            .PublishAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<INatsSerialize<string>?>(), Arg.Any<NatsJSPubOpts?>(), Arg.Any<NatsHeaders?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsyncForAnyArgs(new NatsJSPublishNoResponseException());
+        var signer = SignerReturning(new SignedAssertion("header.payload.sig", "kid-1"));
+        var writer = new KvIdentityStoreWriter(kvContext, signer, Substitute.For<ISecretResolver>(), FixedTimeProvider());
+        var grant = IdentityTestBuilders.GrantFor("notes", propagationEnabled: true, selfLookupKey: "jti-1", FixedNow.AddMinutes(5));
+
+        var result = await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
+
+        Assert.False(result.Succeeded);
     }
 
     [Fact]
@@ -255,6 +316,10 @@ public sealed class KvIdentityStoreWriterTests
         var kvContext = Substitute.For<INatsKVContext>();
         kvContext.GetStoreAsync("callout_apps_notes_oidc_tokens", Arg.Any<CancellationToken>()).Returns(tokenStore);
         kvContext.GetStoreAsync("callout_apps_notes_assertions", Arg.Any<CancellationToken>()).Returns(assertionStore);
+        var js = Substitute.For<INatsJSContext>();
+        js.PublishAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<INatsSerialize<string>?>(), Arg.Any<NatsJSPubOpts?>(), Arg.Any<NatsHeaders?>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<PubAckResponse>(new PubAckResponse { Stream = "KV_callout_apps_notes_assertions", Seq = 1 }));
+        kvContext.JetStreamContext.Returns(js);
         return kvContext;
     }
 
