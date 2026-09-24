@@ -18,7 +18,7 @@ using NATS.Client.Core;
 // against the "callout" resource in the dashboard's Metrics tab:
 //   - callout_requests_granted_total   (one per successful connect)
 //   - callout_request_duration_seconds (receive->reply latency histogram, tagged outcome=granted)
-// and compare against LoadService's own client-side view (each load-N resource):
+// and compare against LoadService's own client-side view (the "load" resource, all replicas):
 //   - load_connect_duration_seconds    (full ConnectAsync as the client sees it, same buckets)
 // The difference between the two is everything outside the callout's handler: TCP + NATS
 // handshake, the server's $SYS.REQ.USER.AUTH round trip, and the server applying the reply.

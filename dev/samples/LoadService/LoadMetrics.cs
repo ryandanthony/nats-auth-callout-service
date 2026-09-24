@@ -40,7 +40,7 @@ public static class LoadMetrics
 
     /// <summary>
     /// Builds the OTLP metric exporter for this process. Aspire injects
-    /// <c>OTEL_EXPORTER_OTLP_ENDPOINT</c>/<c>OTEL_SERVICE_NAME</c> (e.g. <c>load-0</c>), which the
+    /// <c>OTEL_EXPORTER_OTLP_ENDPOINT</c>/<c>OTEL_SERVICE_NAME</c> (<c>load</c>, shared by every replica), which the
     /// SDK reads itself; with no endpoint set the exporter simply has nowhere to send.
     /// </summary>
     /// <returns>The meter provider; dispose it at shutdown to flush the final export.</returns>

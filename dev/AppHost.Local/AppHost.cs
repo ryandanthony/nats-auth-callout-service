@@ -65,19 +65,20 @@ builder.AddProject<Projects.TaskService>("task")
 // dashboard's Metrics tab. Two axes of parallelism, so the callout's own bounded-concurrency
 // path is actually exercised:
 //   1. Each instance drives LOAD_CONCURRENCY parallel connect loops in-process.
-//   2. Several independent instances (load-0, load-1, ...) run side by side as separate
-//      Aspire resources — override LoadInstances to fan out wider.
-// Override LOAD_CONCURRENCY / LOAD_DELAY_MS / LOAD_DURATION_SEC per instance in the dashboard.
+//   2. Several independent processes run side by side as replicas of the single "load"
+//      resource: raise LoadInstances to fan out wider.
+// Replicas (rather than separate load-0, load-1, ... resources) give every process the same
+// OTEL_SERVICE_NAME ("load") with a distinct service.instance.id, so the dashboard groups their
+// telemetry (load_connect_duration_seconds) as one app instead of N unrelated ones.
+// LOAD_CONCURRENCY / LOAD_DELAY_MS / LOAD_DURATION_SEC apply to every replica.
 const int LoadInstances = 3;
 var natsUri = ReferenceExpression.Create($"nats://{nats.GetEndpoint("tcp").Property(EndpointProperty.HostAndPort)}");
-for (var i = 0; i < LoadInstances; i++)
-{
-    builder.AddProject<Projects.LoadService>($"load-{i}")
-        .WithEnvironment("NATS_URI", natsUri)
-        .WithEnvironment("LOAD_CONCURRENCY", "8")
-        .WithEnvironment("LOAD_DELAY_MS", "25")
-        .WithReference(keycloak)
-        .WaitFor(callout);
-}
+builder.AddProject<Projects.LoadService>("load")
+    .WithReplicas(LoadInstances)
+    .WithEnvironment("NATS_URI", natsUri)
+    .WithEnvironment("LOAD_CONCURRENCY", "8")
+    .WithEnvironment("LOAD_DELAY_MS", "25")
+    .WithReference(keycloak)
+    .WaitFor(callout);
 
 await builder.Build().RunAsync();
