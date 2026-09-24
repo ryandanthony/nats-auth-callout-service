@@ -18,6 +18,11 @@ using NATS.Client.Core;
 // against the "callout" resource in the dashboard's Metrics tab:
 //   - callout_requests_granted_total   (one per successful connect)
 //   - callout_request_duration_seconds (receive->reply latency histogram, tagged outcome=granted)
+// and compare against LoadService's own client-side view (each load-N resource):
+//   - load_connect_duration_seconds    (full ConnectAsync as the client sees it, same buckets)
+// The difference between the two is everything outside the callout's handler: TCP + NATS
+// handshake, the server's $SYS.REQ.USER.AUTH round trip, and the server applying the reply.
+// The console report prints the rolling mean client connect latency too.
 //
 // Each worker reuses one token across connects (re-minting per iteration would rate-limit
 // Keycloak, not the callout, which is what we actually want to exercise) and re-mints it only
@@ -45,6 +50,9 @@ Console.CancelKeyPress += (_, e) =>
     e.Cancel = true;
     stopSignal.Cancel();
 };
+
+// Disposed at exit so the final metric export is flushed.
+using var meterProvider = LoadMetrics.BuildMeterProvider();
 
 // Each worker fetches its own token, so its connections carry a distinct jti (the callout's
 // identity self-lookup key, doc 07) and never contend on a single hot KV key, exactly like
@@ -102,13 +110,16 @@ async Task DriveAsync(TimeSpan loopDelay, CancellationToken startupToken, Cancel
 }
 
 // One connect attempt. ConnectAsync forces the actual connect (and thus the callout) rather
-// than lazy-connecting. Returns true on success, false on any non-cancellation failure.
+// than lazy-connecting. Returns true on success, false on any non-cancellation failure. Only
+// ConnectAsync is timed (not the disposal/close), so the metric is the auth-bearing handshake.
 static async Task<bool> TryConnectOnceAsync(NatsOpts opts, CancellationToken cancellationToken)
 {
+    var start = TimeProvider.System.GetTimestamp();
     try
     {
         await using var nats = new NatsConnection(opts);
         await nats.ConnectAsync();
+        LoadMetrics.RecordConnect(TimeProvider.System.GetElapsedTime(start), connected: true);
         return true;
     }
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -117,6 +128,7 @@ static async Task<bool> TryConnectOnceAsync(NatsOpts opts, CancellationToken can
     }
     catch (NatsException ex)
     {
+        LoadMetrics.RecordConnect(TimeProvider.System.GetElapsedTime(start), connected: false);
         await Console.Error.WriteLineAsync($"LoadService: connect failed ({ex.GetType().Name}: {ex.Message}).");
         return false;
     }
@@ -133,8 +145,9 @@ async Task ReportAsync(CancellationToken cancellationToken)
         var now = Interlocked.Read(ref totalConnects);
         var rate = (now - last) / reportInterval.TotalSeconds;
         last = now;
+        var meanConnect = LoadMetrics.TakeIntervalMeanConnectText();
         await Console.Out.WriteLineAsync(
-            $"LoadService: {now} connects so far (~{rate:0}/sec), {Interlocked.Read(ref totalFailures)} failures.");
+            $"LoadService: {now} connects so far (~{rate:0}/sec), mean connect {meanConnect}, {Interlocked.Read(ref totalFailures)} failures.");
     }
 }
 

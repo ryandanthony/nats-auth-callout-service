@@ -20,10 +20,14 @@
 
   <ItemGroup>
     <PackageReference Include="NATS.Net" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../Shared/SampleSupport.csproj" />
+    <!-- Only for CalloutResponderMetrics.DurationBucketBoundariesSeconds, so the client-side
+         connect histogram shares the callout's bucket boundaries exactly. -->
+    <ProjectReference Include="../../../src/AuthCallout.Nats/AuthCallout.Nats.csproj" />
   </ItemGroup>
 
 </Project>
