@@ -11,6 +11,7 @@
     <Project Path="src/AuthCallout.Secrets/AuthCallout.Secrets.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/AuthCallout.Benchmarks/AuthCallout.Benchmarks.csproj" />
     <Project Path="tests/AuthCallout.Config.Tests/AuthCallout.Config.Tests.csproj" />
     <Project Path="tests/AuthCallout.Contracts.Tests/AuthCallout.Contracts.Tests.csproj" />
     <Project Path="tests/AuthCallout.Core.Tests/AuthCallout.Core.Tests.csproj" />

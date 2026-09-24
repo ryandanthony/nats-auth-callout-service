@@ -65,6 +65,9 @@
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.15.0" />
     <PackageVersion Include="Testcontainers.K3s" Version="4.15.0" />
     <PackageVersion Include="Alba" Version="8.5.3" />
+    <!-- Real-NATS (Testcontainers) latency-goal benchmark suite (tests/AuthCallout.Benchmarks),
+         not a `dotnet test` xunit project: run via `dotnet run -c Release`. -->
+    <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <!-- Test-only JSON Schema (draft 2020-12) validator, coordinator-approved (P02 DM) for
          AuthCallout.Contracts.Tests to validate doc-09 example fixtures against the four
          hand-authored schemas. Never referenced by AuthCallout.Contracts itself. -->

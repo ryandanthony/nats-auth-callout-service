@@ -13,6 +13,11 @@ build:
 test:
     dotnet test AuthCallout.slnx
 
+# Run the callout's real-NATS latency-goal benchmark/regression gate (p50<=25ms, p99<=50ms).
+# Requires Docker (Testcontainers); exits non-zero if the goal is not met.
+bench:
+    dotnet run --project tests/AuthCallout.Benchmarks -c Release
+
 # Start the local Aspire AppHost (files-source callout + NATS + Keycloak + samples)
 run-aspire-local:
     dotnet run --project dev/AppHost.Local
