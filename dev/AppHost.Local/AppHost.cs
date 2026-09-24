@@ -61,7 +61,7 @@ builder.AddProject<Projects.TaskService>("task")
 
 // LoadService (dev-only load generator): rapidly opens NATS connections, each of which drives
 // one auth-callout request, so the callout_requests_* counters and the
-// callout_request_duration_seconds histogram move continuously and can be watched live in the
+// callout_request_duration_ms histogram move continuously and can be watched live in the
 // dashboard's Metrics tab. Two axes of parallelism, so the callout's own bounded-concurrency
 // path is actually exercised:
 //   1. Each instance drives LOAD_CONCURRENCY parallel connect loops in-process.
@@ -69,7 +69,7 @@ builder.AddProject<Projects.TaskService>("task")
 //      resource: raise LoadInstances to fan out wider.
 // Replicas (rather than separate load-0, load-1, ... resources) give every process the same
 // OTEL_SERVICE_NAME ("load") with a distinct service.instance.id, so the dashboard groups their
-// telemetry (load_connect_duration_seconds) as one app instead of N unrelated ones.
+// telemetry (load_connect_duration_ms) as one app instead of N unrelated ones.
 // LOAD_CONCURRENCY / LOAD_DELAY_MS / LOAD_DURATION_SEC apply to every replica.
 const int LoadInstances = 3;
 var natsUri = ReferenceExpression.Create($"nats://{nats.GetEndpoint("tcp").Property(EndpointProperty.HostAndPort)}");

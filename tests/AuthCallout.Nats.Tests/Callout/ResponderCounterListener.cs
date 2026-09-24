@@ -76,7 +76,7 @@ internal sealed class ResponderCounterListener : IDisposable
 
     public long Dropped => Interlocked.Read(ref _dropped);
 
-    /// <summary>Gets the per-request duration measurements (seconds) recorded on the histogram, in record order.</summary>
+    /// <summary>Gets the per-request duration measurements (milliseconds) recorded on the histogram, in record order.</summary>
     public IReadOnlyCollection<double> Durations => _durations;
 
     public void Dispose() => _listener.Dispose();

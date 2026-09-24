@@ -10,7 +10,7 @@ namespace AuthCallout.Benchmarks;
 
 /// <summary>
 /// The callout's request-handling latency goal (the mission this benchmark suite gates on):
-/// p50 &lt;= 25ms, p99 &lt;= 50ms, measured server-side as <c>callout_request_duration_seconds</c>
+/// p50 &lt;= 25ms, p99 &lt;= 50ms, measured server-side as <c>callout_request_duration_ms</c>
 /// (receive to reply, granted requests). Centralized here so the gate itself, the console
 /// report, and any future test all read the same numbers instead of duplicating the literal.
 /// </summary>

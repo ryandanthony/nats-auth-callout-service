@@ -17,9 +17,9 @@ using NATS.Client.Core;
 // close it, repeat — produces a steady stream of granted decisions. Watch these tick over live
 // against the "callout" resource in the dashboard's Metrics tab:
 //   - callout_requests_granted_total   (one per successful connect)
-//   - callout_request_duration_seconds (receive->reply latency histogram, tagged outcome=granted)
+//   - callout_request_duration_ms      (receive->reply latency histogram, tagged outcome=granted)
 // and compare against LoadService's own client-side view (the "load" resource, all replicas):
-//   - load_connect_duration_seconds    (full ConnectAsync as the client sees it, same buckets)
+//   - load_connect_duration_ms         (full ConnectAsync as the client sees it, same buckets)
 // The difference between the two is everything outside the callout's handler: TCP + NATS
 // handshake, the server's $SYS.REQ.USER.AUTH round trip, and the server applying the reply.
 // The console report prints the rolling mean client connect latency too.

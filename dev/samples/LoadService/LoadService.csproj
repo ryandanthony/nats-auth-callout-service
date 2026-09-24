@@ -4,7 +4,7 @@
        LoadService exists purely to exercise the callout. It fetches one OIDC token, then
        rapidly opens and closes NATS connections in a loop — each connect drives one auth
        request through the callout, so the new callout_requests_* counters and the
-       callout_request_duration_seconds histogram tick over continuously and can be watched
+       callout_request_duration_ms histogram tick over continuously and can be watched
        live in the Aspire dashboard's metrics view. Not referenced by src/ or tests/; the
        AppHost adds it as Projects.LoadService. -->
   <PropertyGroup>
@@ -25,7 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Shared/SampleSupport.csproj" />
-    <!-- Only for CalloutResponderMetrics.DurationBucketBoundariesSeconds, so the client-side
+    <!-- Only for CalloutResponderMetrics.DurationBucketBoundariesMilliseconds, so the client-side
          connect histogram shares the callout's bucket boundaries exactly. -->
     <ProjectReference Include="../../../src/AuthCallout.Nats/AuthCallout.Nats.csproj" />
   </ItemGroup>

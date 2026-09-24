@@ -11,7 +11,7 @@
 //      fixture tests/AuthCallout.Integration proves against), not a mock.
 //   2. Is a regression gate: every run prints and checks BOTH the client-observed connect
 //      latency (BenchmarkDotNet's own measured distribution) AND the callout's own server-side
-//      callout_request_duration_seconds histogram (via ServerSideHistogram, the exact
+//      callout_request_duration_ms histogram (via ServerSideHistogram, the exact
 //      instrument the production OTel pipeline exports) against CalloutLatencyGoal. The process
 //      exits non-zero the moment either one regresses past the goal, so this can be wired into
 //      CI or run by hand after any change to the request path.
@@ -42,11 +42,11 @@ var stats = report.ResultStatistics ?? throw new InvalidOperationException("The 
 var clientP50Ms = stats.Percentiles.P50 / 1_000_000.0;
 var clientP99Ms = stats.Percentiles.Percentile(99) / 1_000_000.0;
 
-var serverSamples = serverHistogram.GrantedSecondsSamples;
+var serverSamples = serverHistogram.GrantedMillisecondsSamples;
 if (serverSamples.Count == 0)
 {
     await Console.Error.WriteLineAsync(
-        "No callout_request_duration_seconds (outcome=granted) measurements were observed. " +
+        "No callout_request_duration_ms (outcome=granted) measurements were observed. " +
         "Every benchmarked connect should have produced one grant; treating this as a failure.");
     return 1;
 }
@@ -64,7 +64,7 @@ if (serverSamples.Count < stats.N)
     return 1;
 }
 
-var serverMsSamples = serverSamples.TakeLast(stats.N).Select(seconds => seconds * 1000.0).ToArray();
+var serverMsSamples = serverSamples.TakeLast(stats.N).ToArray();
 Array.Sort(serverMsSamples);
 var serverP50Ms = Percentile(serverMsSamples, 50);
 var serverP99Ms = Percentile(serverMsSamples, 99);
@@ -73,7 +73,7 @@ Console.WriteLine();
 Console.WriteLine("=== Callout latency goal check ===");
 Console.WriteLine($"Goal: p50 <= {CalloutLatencyGoal.P50MaxMilliseconds:0.###}ms, p99 <= {CalloutLatencyGoal.P99MaxMilliseconds:0.###}ms");
 Console.WriteLine($"Client-observed connect (BenchmarkDotNet, n={stats.N}): p50={clientP50Ms:0.000}ms p99={clientP99Ms:0.000}ms");
-Console.WriteLine($"Server-side callout_request_duration_seconds (n={serverMsSamples.Length}): p50={serverP50Ms:0.000}ms p99={serverP99Ms:0.000}ms");
+Console.WriteLine($"Server-side callout_request_duration_ms (n={serverMsSamples.Length}): p50={serverP50Ms:0.000}ms p99={serverP99Ms:0.000}ms");
 
 // The gate is the server-side histogram: it is the exact SLI the mission and the production
 // OTel dashboard use. The client-observed number is reported alongside for context (it also

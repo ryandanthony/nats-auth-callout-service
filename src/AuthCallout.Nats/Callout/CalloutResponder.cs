@@ -201,18 +201,18 @@ public sealed class CalloutResponder
     /// <summary>Records the grant/deny outcome metric and the receive-to-reply duration, strictly after the reply has been sent.</summary>
     private void RecordDecision(Decision decision, long startTimestamp)
     {
-        var elapsedSeconds = _timeProvider.GetElapsedTime(startTimestamp).TotalSeconds;
+        var elapsedMilliseconds = _timeProvider.GetElapsedTime(startTimestamp).TotalMilliseconds;
         switch (decision)
         {
             case GrantedDecision:
                 {
-                    CalloutResponderMetrics.RecordGranted(elapsedSeconds);
+                    CalloutResponderMetrics.RecordGranted(elapsedMilliseconds);
                     break;
                 }
 
             case DeniedDecision:
                 {
-                    CalloutResponderMetrics.RecordDenied(elapsedSeconds);
+                    CalloutResponderMetrics.RecordDenied(elapsedMilliseconds);
                     break;
                 }
 

@@ -13,7 +13,7 @@ namespace AuthCallout.Dev.Samples.LoadService;
 
 /// <summary>
 /// Client-side view of each callout-driven connect, to compare against the callout's own
-/// server-side <c>callout_request_duration_seconds</c>. The callout only times receive-to-reply
+/// server-side <c>callout_request_duration_ms</c>. The callout only times receive-to-reply
 /// inside its handler (the "API work"); <see cref="ConnectDurationHistogramName"/> times the
 /// whole <c>ConnectAsync</c> as the client experiences it (TCP connect, NATS INFO/CONNECT,
 /// the server's round trip to the callout over <c>$SYS.REQ.USER.AUTH</c>, the callout's work,
@@ -26,14 +26,14 @@ public static class LoadMetrics
     private const string MeterName = "AuthCallout.Dev.LoadService";
 
     // Client-observed connect latency, tagged outcome=connected|failed.
-    private const string ConnectDurationHistogramName = "load_connect_duration_seconds";
+    private const string ConnectDurationHistogramName = "load_connect_duration_ms";
 
     private static readonly Meter Meter = new(MeterName);
 
     private static readonly Histogram<double> ConnectDuration = Meter.CreateHistogram<double>(
         ConnectDurationHistogramName,
-        unit: "s",
-        description: "Client-observed seconds for a full NATS connect through the auth callout (compare with callout_request_duration_seconds).");
+        unit: "ms",
+        description: "Client-observed milliseconds for a full NATS connect through the auth callout (compare with callout_request_duration_ms).");
 
     private static long _intervalTicks;
     private static long _intervalCount;
@@ -49,7 +49,7 @@ public static class LoadMetrics
             .AddMeter(MeterName)
             .AddView(
                 ConnectDurationHistogramName,
-                new ExplicitBucketHistogramConfiguration { Boundaries = [.. CalloutResponderMetrics.DurationBucketBoundariesSeconds] })
+                new ExplicitBucketHistogramConfiguration { Boundaries = [.. CalloutResponderMetrics.DurationBucketBoundariesMilliseconds] })
             .AddOtlpExporter()
             .Build();
 
@@ -58,7 +58,7 @@ public static class LoadMetrics
     /// <param name="connected">Whether the connect succeeded.</param>
     public static void RecordConnect(TimeSpan elapsed, bool connected)
     {
-        ConnectDuration.Record(elapsed.TotalSeconds, new KeyValuePair<string, object?>("outcome", connected ? "connected" : "failed"));
+        ConnectDuration.Record(elapsed.TotalMilliseconds, new KeyValuePair<string, object?>("outcome", connected ? "connected" : "failed"));
         if (connected)
         {
             Interlocked.Add(ref _intervalTicks, elapsed.Ticks);

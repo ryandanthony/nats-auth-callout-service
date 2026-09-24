@@ -39,28 +39,26 @@ public static class CalloutResponderMetrics
     public const string DroppedCounterName = "callout_requests_dropped_total";
 #pragma warning restore S2339
 
-    /// <summary>The histogram name for per-request handling latency (<c>callout_request_duration_seconds</c>): wall-clock seconds from receiving an auth request to sending its reply. Only recorded for requests that replied (grant/deny); dropped requests never reply and are not timed.</summary>
+    /// <summary>The histogram name for per-request handling latency (<c>callout_request_duration_ms</c>): wall-clock milliseconds from receiving an auth request to sending its reply. Only recorded for requests that replied (grant/deny); dropped requests never reply and are not timed.</summary>
 #pragma warning disable S2339
-    public const string DurationHistogramName = "callout_request_duration_seconds";
+    public const string DurationHistogramName = "callout_request_duration_ms";
 #pragma warning restore S2339
 
-    private const double MillisecondsPerSecond = 1000d;
-
-    private static readonly double[] DurationBucketBoundariesMilliseconds =
+    private static readonly double[] DurationBucketBoundariesMillisecondsSource =
         [0.5, 1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000];
 
     /// <summary>
-    /// Gets the explicit bucket boundaries (seconds) for the <see cref="RequestDuration"/> histogram, for
+    /// Gets the explicit bucket boundaries (milliseconds) for the <see cref="RequestDuration"/> histogram, for
     /// the Host to install as an OTel <c>Explicit Bucket Histogram</c> view (the SDK default
     /// buckets top out coarsely — 0, 5, 10, 25, 50, 75... ms then jump — which is why the
     /// dashboard shows the whole distribution collapsed into a single low bucket with a 5s+
-    /// tail). Declared in milliseconds (the natural unit for these sub-ms-to-low-ms latencies,
-    /// with headroom up to the per-request timeout) and converted to the histogram's seconds
-    /// unit, so the boundaries read as intent rather than a wall of decimal literals.
+    /// tail). Declared directly in milliseconds — the histogram's own unit — since that is the
+    /// natural scale for these sub-ms-to-low-ms latencies, with headroom up to the per-request
+    /// timeout.
     /// </summary>
-    /// <value>The explicit bucket boundaries, in seconds.</value>
-    public static IReadOnlyList<double> DurationBucketBoundariesSeconds { get; } =
-        DurationBucketBoundariesMilliseconds.Select(static ms => ms / MillisecondsPerSecond).ToArray();
+    /// <value>The explicit bucket boundaries, in milliseconds.</value>
+    public static IReadOnlyList<double> DurationBucketBoundariesMilliseconds { get; } =
+        [.. DurationBucketBoundariesMillisecondsSource];
 
     private static readonly Meter Meter = new(MeterName);
 
@@ -79,24 +77,24 @@ public static class CalloutResponderMetrics
     public static Counter<long> Dropped { get; } =
         Meter.CreateCounter<long>(DroppedCounterName, description: "Auth-callout requests dropped without a reply (fail closed): malformed, xkey mismatch, no active config, per-request timeout, or unexpected failure.");
 
-    /// <summary>Gets the histogram of per-request handling latency in seconds (receive to reply), tagged with the outcome (<c>granted</c>/<c>denied</c>). Only recorded for requests that replied.</summary>
+    /// <summary>Gets the histogram of per-request handling latency in milliseconds (receive to reply), tagged with the outcome (<c>granted</c>/<c>denied</c>). Only recorded for requests that replied.</summary>
     /// <value>The request-duration histogram.</value>
     public static Histogram<double> RequestDuration { get; } =
-        Meter.CreateHistogram<double>(DurationHistogramName, unit: "s", description: "Wall-clock seconds from receiving an auth-callout request to sending its reply, tagged by outcome (granted/denied).");
+        Meter.CreateHistogram<double>(DurationHistogramName, unit: "ms", description: "Wall-clock milliseconds from receiving an auth-callout request to sending its reply, tagged by outcome (granted/denied).");
 
     /// <summary>Records a granted decision: increments <see cref="Granted"/> and the <see cref="RequestDuration"/> histogram tagged <c>outcome=granted</c>.</summary>
-    /// <param name="elapsedSeconds">The receive-to-reply latency in seconds.</param>
-    public static void RecordGranted(double elapsedSeconds)
+    /// <param name="elapsedMilliseconds">The receive-to-reply latency in milliseconds.</param>
+    public static void RecordGranted(double elapsedMilliseconds)
     {
         Granted.Add(1);
-        RequestDuration.Record(elapsedSeconds, new KeyValuePair<string, object?>("outcome", "granted"));
+        RequestDuration.Record(elapsedMilliseconds, new KeyValuePair<string, object?>("outcome", "granted"));
     }
 
     /// <summary>Records a denied decision: increments <see cref="Denied"/> and the <see cref="RequestDuration"/> histogram tagged <c>outcome=denied</c>.</summary>
-    /// <param name="elapsedSeconds">The receive-to-reply latency in seconds.</param>
-    public static void RecordDenied(double elapsedSeconds)
+    /// <param name="elapsedMilliseconds">The receive-to-reply latency in milliseconds.</param>
+    public static void RecordDenied(double elapsedMilliseconds)
     {
         Denied.Add(1);
-        RequestDuration.Record(elapsedSeconds, new KeyValuePair<string, object?>("outcome", "denied"));
+        RequestDuration.Record(elapsedMilliseconds, new KeyValuePair<string, object?>("outcome", "denied"));
     }
 }

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Real-NATS (Testcontainers) BenchmarkDotNet suite for the callout's request-handling
-       latency goal (p50<=25ms, p99<=50ms server receive-to-reply, callout_request_duration_seconds).
+       latency goal (p50<=25ms, p99<=50ms server receive-to-reply, callout_request_duration_ms).
        Two purposes: (1) prove the goal is met against real infrastructure, not a mock; (2) a
        repeatable regression gate — `dotnet run -c Release` exits nonzero the moment a future
        change pushes the real, measured percentiles past the goal. Reuses the exact fixtures

@@ -50,7 +50,7 @@ public static class OpenTelemetryExtensions
                     CalloutResponderMetrics.DurationHistogramName,
                     new ExplicitBucketHistogramConfiguration
                     {
-                        Boundaries = [.. CalloutResponderMetrics.DurationBucketBoundariesSeconds],
+                        Boundaries = [.. CalloutResponderMetrics.DurationBucketBoundariesMilliseconds],
                     })
                 .AddOtlpExporter())
             .WithTracing(tracing => tracing

@@ -488,7 +488,7 @@ public sealed class CalloutResponderTests
         using var counters = new ResponderCounterListener();
         await harness.RunOneAsync(CalloutTestBuilders.BuildRequestPayload());
 
-        Assert.Equal(0.25, counters.Durations.Single(), precision: 3);
+        Assert.Equal(250, counters.Durations.Single(), precision: 3);
     }
 
     [Fact]

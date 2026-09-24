@@ -13,7 +13,7 @@ namespace AuthCallout.Benchmarks;
 /// Subscribes directly to the callout's own <see cref="CalloutResponderMetrics.RequestDuration"/>
 /// instrument via <see cref="MeterListener"/> and records every raw measurement in-process, so
 /// this suite reports the exact same server-side receive-to-reply latency
-/// (<c>callout_request_duration_seconds</c>) the production OTel pipeline would export — not a
+/// (<c>callout_request_duration_ms</c>) the production OTel pipeline would export — not a
 /// client-side approximation. <see cref="HostFixture"/> runs the real production
 /// <c>CalloutResponder</c> in the same process as this benchmark, so the meter is directly
 /// observable without an OTLP hop.
@@ -21,7 +21,7 @@ namespace AuthCallout.Benchmarks;
 public sealed class ServerSideHistogram : IDisposable
 {
     private readonly MeterListener _listener = new();
-    private readonly List<double> _grantedSecondsSamples = [];
+    private readonly List<double> _grantedMillisecondsSamples = [];
     private readonly Lock _sync = new();
 
     /// <summary>Initializes a new instance of the <see cref="ServerSideHistogram"/> class and starts listening.</summary>
@@ -39,15 +39,15 @@ public sealed class ServerSideHistogram : IDisposable
         _listener.Start();
     }
 
-    /// <summary>Gets the granted-outcome samples recorded since construction, in seconds (callout's own unit).</summary>
-    /// <value>A snapshot of every granted <c>callout_request_duration_seconds</c> measurement observed so far.</value>
-    public IReadOnlyList<double> GrantedSecondsSamples
+    /// <summary>Gets the granted-outcome samples recorded since construction, in milliseconds (callout's own unit).</summary>
+    /// <value>A snapshot of every granted <c>callout_request_duration_ms</c> measurement observed so far.</value>
+    public IReadOnlyList<double> GrantedMillisecondsSamples
     {
         get
         {
             lock (_sync)
             {
-                return [.. _grantedSecondsSamples];
+                return [.. _grantedMillisecondsSamples];
             }
         }
     }
@@ -57,7 +57,7 @@ public sealed class ServerSideHistogram : IDisposable
     {
         lock (_sync)
         {
-            _grantedSecondsSamples.Clear();
+            _grantedMillisecondsSamples.Clear();
         }
     }
 
@@ -74,7 +74,7 @@ public sealed class ServerSideHistogram : IDisposable
             {
                 lock (_sync)
                 {
-                    _grantedSecondsSamples.Add(measurement);
+                    _grantedMillisecondsSamples.Add(measurement);
                 }
 
                 return;
