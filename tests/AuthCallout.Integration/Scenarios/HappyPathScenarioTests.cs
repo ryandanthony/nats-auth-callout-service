@@ -92,6 +92,39 @@ public sealed class HappyPathScenarioTests(IntegrationEnvironment environment) :
     }
 
     [Fact]
+    public async Task SameTokenReconnect_ReplacesAssertionAtSelfLookupKey_WithPerMessageTtl()
+    {
+        // The self-lookup key (jti) collides whenever one token opens a second connection. The
+        // store writer replaces the prior assertion with a single last-writer-wins KV put that
+        // carries a per-message Nats-TTL header (D17). Prove against a real server that the
+        // second connection's assertion (a new generated connection id) replaced the first,
+        // and that the stored message still carries a positive TTL.
+        var token = await environment.Keycloak.GetPasswordGrantTokenAsync(
+            IntegrationRealm.NotesClientId, IntegrationRealm.NoteUsername, IntegrationRealm.NotePassword);
+        var assertionKey = AppSlug.DeriveKeySegment(JwtInspector.ReadClaim(token, "jti"));
+
+        await using var first = await ConnectWithTokenAsync(token);
+        await AssertPublishAllowedAsync(first, "notes.dev.replace-check-1");
+        var firstStore = await first.CreateKeyValueStoreContext().GetStoreAsync("callout_apps_notes_assertions");
+        var firstEntry = await firstStore.GetEntryAsync<string>(assertionKey);
+        var firstId = JwtInspector.ReadClaim(firstEntry.Value!, "id");
+
+        await using var second = await ConnectWithTokenAsync(token);
+        await AssertPublishAllowedAsync(second, "notes.dev.replace-check-2");
+        var secondStore = await second.CreateKeyValueStoreContext().GetStoreAsync("callout_apps_notes_assertions");
+        var secondEntry = await secondStore.GetEntryAsync<string>(assertionKey);
+        var secondId = JwtInspector.ReadClaim(secondEntry.Value!, "id");
+
+        Assert.NotEqual(firstId, secondId);
+        Assert.True(secondEntry.Revision > firstEntry.Revision);
+
+        var ttl = await ReadAssertionTtlHeaderAsync(assertionKey);
+        Assert.NotNull(ttl);
+        Assert.EndsWith("s", ttl, StringComparison.Ordinal);
+        Assert.True(long.Parse(ttl![..^1], System.Globalization.CultureInfo.InvariantCulture) > 0);
+    }
+
+    [Fact]
     public async Task UserToken_EmitsAuthOutcomeSuccessEvent()
     {
         var nats = environment.Nats;
@@ -212,6 +245,40 @@ public sealed class HappyPathScenarioTests(IntegrationEnvironment environment) :
         await serviceConn.ConnectAsync();
         var store = await serviceConn.CreateKeyValueStoreContext().GetStoreAsync("callout_apps_notes_oidc_tokens");
         return await FindEntryValueAsync(store, expectedToken);
+    }
+
+    /// <summary>Reads the raw <c>Nats-TTL</c> header of the latest message for an assertion key, via the service user (stream-level read).</summary>
+    private async Task<string?> ReadAssertionTtlHeaderAsync(string assertionKey)
+    {
+        var nats = environment.Nats;
+        await using var serviceConn = new NatsConnection(new NatsOpts
+        {
+            Url = nats.ConnectionUrl,
+            AuthOpts = new NatsAuthOpts { Seed = nats.ServiceUserKey.Seed, NKey = nats.ServiceUserKey.PublicKey },
+        });
+        await serviceConn.ConnectAsync();
+        var stream = await serviceConn.CreateJetStreamContext().GetStreamAsync("KV_callout_apps_notes_assertions");
+        var message = await stream.GetAsync(new NATS.Client.JetStream.Models.StreamMsgGetRequest
+        {
+            LastBySubj = $"$KV.callout_apps_notes_assertions.{assertionKey}",
+        });
+        return message.Message?.Hdrs is { } raw ? ParseHeader(raw, "Nats-TTL") : null;
+    }
+
+    /// <summary>Parses one header value out of a base64-encoded raw NATS header block (as returned by a direct stream message get).</summary>
+    private static string? ParseHeader(string base64Headers, string name)
+    {
+        var text = Encoding.UTF8.GetString(Convert.FromBase64String(base64Headers));
+        foreach (var line in text.Split("\r\n"))
+        {
+            var separator = line.IndexOf(':', StringComparison.Ordinal);
+            if (separator > 0 && string.Equals(line[..separator].Trim(), name, StringComparison.OrdinalIgnoreCase))
+            {
+                return line[(separator + 1)..].Trim();
+            }
+        }
+
+        return null;
     }
 
     private static async Task AssertPublishAllowedAsync(NatsConnection client, string subject)
