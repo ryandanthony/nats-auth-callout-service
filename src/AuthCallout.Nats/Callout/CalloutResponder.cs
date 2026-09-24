@@ -28,6 +28,10 @@ namespace AuthCallout.Nats.Callout;
 /// optional diagnostic callback and dropped without a reply (fail closed; the client
 /// experiences the ordinary callout timeout).
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Major Code Smell",
+    "S1200:Classes should not be coupled to too many other classes",
+    Justification = "The responder is the transport-edge orchestrator and sat exactly at the 30-type limit; per-request tracing (CalloutActivitySource) adds the only extra couplings, and splitting the orchestration just to satisfy the count would scatter one linear request flow.")]
 public sealed class CalloutResponder
 {
     /// <summary>The fixed NATS auth callout subject (doc 08).</summary>
@@ -128,6 +132,7 @@ public sealed class CalloutResponder
         // message is picked up, stopped right after the reply is sent (only replied requests
         // are timed; a dropped request never replies, so its latency is meaningless).
         var startTimestamp = _timeProvider.GetTimestamp();
+        using var requestSpan = CalloutActivitySource.StartRequest();
         using var requestCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         requestCts.CancelAfter(_options.PerRequestTimeout);
         var requestToken = requestCts.Token;
@@ -167,10 +172,13 @@ public sealed class CalloutResponder
             return;
         }
 
-        var decision = await _dependencies.Pipeline.ResolveAsync(request, activeConfig, cancellationToken);
-        decision = await StoreIdentityIfNeededAsync(decision, request, cancellationToken);
-
-        await ReplyAsync(msg, request, decision, envelope.ServerXkeyPublic, cancellationToken);
+        var decision = await CalloutActivitySource.TraceStageAsync(
+            "auth.resolve", () => _dependencies.Pipeline.ResolveAsync(request, activeConfig, cancellationToken));
+        decision = await CalloutActivitySource.TraceStageAsync(
+            "auth.identity_store", () => StoreIdentityIfNeededAsync(decision, request, cancellationToken));
+        await CalloutActivitySource.TraceStageAsync(
+            "auth.reply", () => ReplyAsync(msg, request, decision, envelope.ServerXkeyPublic, cancellationToken));
+        CalloutActivitySource.TagOutcome(decision is GrantedDecision);
 
         // The reply is out: record the success/failure metric for the callout method being
         // invoked (a grant is a success, a denial a failure) and the receive-to-reply duration,

@@ -8,6 +8,7 @@ using System.Linq;
 using AuthCallout.Contracts.Config;
 using AuthCallout.Contracts.Decisions;
 using AuthCallout.Contracts.Seams;
+using AuthCallout.Nats.Callout;
 using NATS.Client.KeyValueStore;
 
 namespace AuthCallout.Nats.Identity;
@@ -104,15 +105,21 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
             var slug = AppSlug.From(grant.Application!);
             var connectionId = ConnectionIdGenerator.NewId();
 
-            var tokenStore = await _kvContext.GetStoreAsync(slug.OidcTokensBucket, cancellationToken);
-            await tokenStore.CreateAsync(connectionId, rawOidcToken, ttl, cancellationToken: cancellationToken);
+            using (CalloutActivitySource.StartStage("kv.oidc_token.write"))
+            {
+                var tokenStore = await _kvContext.GetStoreAsync(slug.OidcTokensBucket, cancellationToken);
+                await tokenStore.CreateAsync(connectionId, rawOidcToken, ttl, cancellationToken: cancellationToken);
+            }
 
             var claims = new AssertionClaims(connectionId, grant.Principal!, slug.Value, grant.Issuer!, grant.Expiry);
             var signed = _assertionSigner.Sign(claims);
 
-            var assertionStore = await _kvContext.GetStoreAsync(slug.AssertionsBucket, cancellationToken);
-            var assertionKey = AppSlug.DeriveKeySegment(grant.SelfLookupKey);
-            await CreateOrReplaceAsync(assertionStore, assertionKey, signed.CompactJwt, ttl, cancellationToken);
+            using (CalloutActivitySource.StartStage("kv.assertion.write"))
+            {
+                var assertionStore = await _kvContext.GetStoreAsync(slug.AssertionsBucket, cancellationToken);
+                var assertionKey = AppSlug.DeriveKeySegment(grant.SelfLookupKey);
+                await CreateOrReplaceAsync(assertionStore, assertionKey, signed.CompactJwt, ttl, cancellationToken);
+            }
 
             return new IdentityStoreWriteResult(Succeeded: true, ConnectionId: connectionId);
         }

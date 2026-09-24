@@ -55,6 +55,7 @@ public static class OpenTelemetryExtensions
                 .AddOtlpExporter())
             .WithTracing(tracing => tracing
                 .AddSource(HostActivitySource.Name)
+                .AddSource(CalloutActivitySource.Name)
                 .AddOtlpExporter());
 
         return services;
