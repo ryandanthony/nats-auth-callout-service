@@ -1,6 +1,9 @@
 # .NET build output
 bin/
 obj/
+
+# BenchmarkDotNet run output (tests/AuthCallout.Benchmarks), written at the repo root
+BenchmarkDotNet.Artifacts/
 out/
 
 # Visual Studio / Rider
