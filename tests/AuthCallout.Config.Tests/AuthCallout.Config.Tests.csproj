@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="**\Fixtures\**\*.*" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Files\Fixtures\**\*.*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
