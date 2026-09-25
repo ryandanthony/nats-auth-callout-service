@@ -1,10 +1,23 @@
 # syntax=docker/dockerfile:1
 # Multi-stage build for AuthCallout.Host (doc 08 §Container & supply chain, P16).
 #
-# Framework-dependent, trimmed self-contained on the dotnet/runtime base (worker +
+# Framework-dependent, self-contained, ReadyToRun on the dotnet/runtime base (worker +
 # minimal-API health only, no ASP.NET/MVC/Razor needed). Not full Native AOT: NKeys/crypto
-# and reflection-based config binding (System.Text.Json + options) make full AOT fragile,
-# so trimming (PublishTrimmed) is the pragmatic choice (doc 08 §Runtime & trimming).
+# and reflection-based config binding (System.Text.Json + options) make full AOT fragile
+# (doc 08 §Runtime & trimming). Not trimmed (PublishTrimmed) either, despite that having once
+# been the plan here: a real trimmed+R2R publish (verified locally, not just assumed) failed
+# with IL2026/IL2070/etc trim-analysis errors inside three third-party dependencies this
+# service pulls in transitively - Dapper (SqlMapper builds its object-materialization IL via
+# reflection, its whole ORM mechanism), KubernetesClient (reflection-based kubeconfig/YAML
+# loading), and YamlDotNet (arbitrary-object-graph deserialization via reflection) - none of
+# which this repo owns or can annotate its way out of without forking them. Suppressing those
+# warnings would risk silently broken reflection at runtime on any code path the test suite
+# doesn't happen to exercise, which is a worse failure mode than a larger image. ReadyToRun
+# stays on its own: it pre-JITs IL to native code as an addition alongside the IL (JIT remains
+# the fallback for everything, including all the reflection above), so it carries none of
+# trimming's static-analysis risk, and it directly targets the cold-start JIT/tiering cost
+# observed on a fresh instance's first live request (~200ms here vs ~5ms steady-state, doc 08
+# §Latency) at the cost of a larger image (native code alongside the IL).
 
 # ---- Build stage -----------------------------------------------------------
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
@@ -52,9 +65,9 @@ RUN case "$TARGETARCH" in \
         *) echo "Unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
     esac \
     && echo "$RID" > /tmp/rid \
-    && dotnet restore src/AuthCallout.Host/AuthCallout.Host.csproj -r "$RID"
+    && dotnet restore src/AuthCallout.Host/AuthCallout.Host.csproj -r "$RID" -p:PublishReadyToRun=true
 
-# Copy the rest and publish, trimmed, for the target architecture. DisableGitVersionTask
+# Copy the rest and publish, self-contained, for the target architecture. DisableGitVersionTask
 # skips GitVersion.MsBuild's own git-history-based version computation (it needs .git, which
 # .dockerignore deliberately excludes from the build context) since CI already resolved the
 # version and passes it in via VERSION/INFORMATIONAL_VERSION build args.
@@ -69,9 +82,8 @@ RUN RID="$(cat /tmp/rid)" \
         -p:Version=${VERSION} \
         -p:InformationalVersion=${INFORMATIONAL_VERSION} \
         -p:DisableGitVersionTask=true \
-        -p:PublishTrimmed=true \
         -p:InvariantGlobalization=true \
-        -p:PublishReadyToRun=false
+        -p:PublishReadyToRun=true
 
 # ---- Runtime stage ----------------------------------------------------------
 # Base runtime image (not aspnet): AuthCallout.Host is a Worker service with a minimal
