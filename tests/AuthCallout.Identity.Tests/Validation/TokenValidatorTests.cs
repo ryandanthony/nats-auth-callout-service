@@ -24,6 +24,8 @@ public sealed class TokenValidatorTests : IDisposable
 {
     private static readonly string[] HouseholdIds = ["H1", "H2"];
 
+    private static readonly string[] NotesEditorRoles = ["notes-editor"];
+
     private readonly TokenValidatorTestHarness _harness = new();
 
     [Fact]
@@ -53,6 +55,35 @@ public sealed class TokenValidatorTests : IDisposable
 
         Assert.True(outcome.IsValid);
         Assert.Equal(["H1", "H2"], outcome.Claims!.GetValues("household_id"));
+    }
+
+    // Regression: string is IEnumerable<char>, so a claims-to-JSON converter that matches
+    // IEnumerable before string writes every scalar string claim as a JSON array of
+    // single-character strings ("notes-web" -> ["n","o",...]). That silently breaks the
+    // authorization `match` on azp / nested realm_access.roles and denies every request,
+    // even though the token itself validates. This asserts scalar strings (top-level and
+    // nested-inside-an-object) survive validation intact.
+    [Fact]
+    public async Task ValidateAsync_ValidToken_PreservesScalarStringClaims()
+    {
+        var issuer = JwksTestBuilders.IssuerFor(_harness.Idp);
+        await _harness.RegisterIssuerAsync(issuer);
+        var token = _harness.Idp.IssueToken(claims: new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            ["azp"] = "notes-web",
+            ["preferred_username"] = "alice",
+            ["realm_access"] = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["roles"] = NotesEditorRoles,
+            },
+        });
+
+        var outcome = await _harness.Validator.ValidateAsync(token, issuer, CancellationToken.None);
+
+        Assert.True(outcome.IsValid);
+        Assert.Equal("notes-web", outcome.Claims!.GetSingleValue("azp"));
+        Assert.Equal("alice", outcome.Claims!.GetSingleValue("preferred_username"));
+        Assert.Equal(["notes-editor"], outcome.Claims!.GetValues("realm_access.roles"));
     }
 
     [Fact]
