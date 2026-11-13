@@ -10,8 +10,8 @@ namespace AuthCallout.Nats.Events;
 
 /// <summary>
 /// Source-generated <see cref="JsonSerializerContext"/> for <see cref="AuthOutcomeEventPayload"/>
-/// (trim/R2R-safe: no reflection at serialize time, doc 08 §Runtime &amp; trimming — this type
-/// exists to keep the Dockerfile's trimmed, R2R publish working). Every naming/ignore-condition/
+/// (trim/R2R-safe: no reflection at serialize time, doc 08 §Runtime &amp; trimming; keeps our own
+/// code trim-clean even though the Dockerfile currently publishes ReadyToRun without trimming). Every naming/ignore-condition/
 /// converter setting must be on this generator attribute itself, not on a runtime
 /// <see cref="System.Text.Json.JsonSerializerOptions"/> instance built around
 /// <see cref="Default"/>: wrapping a source-generated context in

@@ -18,8 +18,8 @@ namespace AuthCallout.Identity.Validation;
 /// (which the caller previously did): serializing a boxed <c>object</c> is reflection-based —
 /// <c>JsonSerializer</c> has to inspect the runtime type of every value at serialization time —
 /// which trips <c>IL2026</c> (<c>RequiresUnreferencedCode</c>) under <c>PublishTrimmed</c> (doc 08
-/// §Runtime &amp; trimming; this type exists to keep the Dockerfile's trimmed, R2R publish
-/// working). The value shapes Microsoft.IdentityModel actually produces are a small, fixed set
+/// §Runtime &amp; trimming; keeps our own code trim-clean even though the Dockerfile currently
+/// publishes ReadyToRun without trimming). The value shapes Microsoft.IdentityModel actually produces are a small, fixed set
 /// (empirically confirmed by decoding a representative token through
 /// <c>JwtSecurityTokenHandler.ValidateTokenAsync</c>): <see cref="string"/>, <see cref="long"/>,
 /// <see cref="double"/>, <see cref="bool"/>, <see cref="IEnumerable"/> (JSON arrays, e.g.

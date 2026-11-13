@@ -68,7 +68,8 @@ public static class BootstrapConfigLoader
                 // trim/R2R-safe path: it parses text directly into a JsonElement tree without
                 // going through JsonSerializer's reflection-based deserialization, so it
                 // carries no RequiresUnreferencedCode warning under PublishTrimmed (doc 08
-                // §Runtime & trimming; the Dockerfile publishes trimmed and R2R).
+                // §Runtime & trimming). The Dockerfile publishes ReadyToRun, not trimmed (see
+                // its header), so this keeps our own code trim-clean rather than being required.
                 using var document = JsonDocument.Parse(text);
                 root = document.RootElement.Clone();
             }
