@@ -97,3 +97,7 @@ The docs site itself (Docusaurus, matching [ryandanthony/dottie](https://github.
 stack) lives in [`docs-site/`](./docs-site/); see
 [`docs-site/website/README.md`](./docs-site/website/README.md) for building
 it locally.
+
+## License
+
+[MIT](./LICENSE)

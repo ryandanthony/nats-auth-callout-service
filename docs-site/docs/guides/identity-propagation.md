@@ -27,7 +27,7 @@ dotnet add package AuthCallout.Identity   # brings AuthCallout.Contracts and Aut
 | `AuthCallout.Identity` | `AssertionSigner.Verify(compactJwt, publicKey)` to check a `Callout-Identity` header. |
 | `AuthCallout.Core` | Dependency of Identity. Not normally referenced directly. |
 
-Package versions match the service release tag (`v1.2.3` publishes `1.2.3`). The repo's [`dev/samples/Shared`](https://github.com/ryandanthony/nats-auth-callout-service/tree/main/dev/samples/Shared) shows the full flow built on these packages: discovery, self-assertion fetch, verification and OIDC token resolution.
+Package versions match the service release (release `v1.2.3` publishes `1.2.3`; a release is cut on every green push to `main`). The repo's [`dev/samples/Shared`](https://github.com/ryandanthony/nats-auth-callout-service/tree/main/dev/samples/Shared) shows the full flow built on these packages: discovery, self-assertion fetch, verification and OIDC token resolution.
 
 ## The full sequence
 
