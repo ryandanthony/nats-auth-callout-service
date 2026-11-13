@@ -6,8 +6,9 @@ sidebar_position: 4
 
 This walks through what happens on a real connection, using the
 [`NoteService` sample](https://github.com/ryandanthony/nats-auth-callout-service/tree/main/dev/samples/NoteService)
-as the reference client (`dotnet run --project dev/AppHost.Local` runs it
-for you, plus a Keycloak realm and NATS).
+as the reference client (`just run-aspire-local`, or `dotnet run --project
+dev/AppHost.Local` directly, runs it for you, plus a Keycloak realm and
+NATS).
 
 ## 1. Get an OIDC access token
 

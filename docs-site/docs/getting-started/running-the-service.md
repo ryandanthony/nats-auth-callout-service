@@ -96,9 +96,19 @@ spin up NATS + Keycloak + the callout + two sample services with one
 command:
 
 ```bash
-dotnet run --project dev/AppHost.Local     # files source, inner loop
-dotnet run --project dev/AppHost.K8s       # CRD source, local k3s
+just run-aspire-local              # files source, inner loop; runs the shipped
+                                    # Dockerfile image by default (needs
+                                    # NUGET_GITHUB_TOKEN or `gh auth token`)
+just run-aspire-local local        # same loop, but the callout runs from the
+                                    # working tree instead of the Docker image
+just run-aspire-local-release      # same as above, AppHost and samples in Release
+just reset-aspire-local            # stop, rebuild, and restart the loop
+dotnet run --project dev/AppHost.K8s   # CRD source, local k3s (no just recipe yet)
 ```
+
+`just bench` runs the callout's real-NATS latency benchmark against a
+Testcontainers NATS instance (goal: p50 ≤ 25ms, p99 ≤ 50ms) and exits
+non-zero if the goal isn't met.
 
 See [`dev/README.md`](https://github.com/ryandanthony/nats-auth-callout-service/blob/main/dev/README.md)
 for prerequisites (a trusted local HTTPS dev cert is required) and what

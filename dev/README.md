@@ -61,6 +61,16 @@ a `notes` token never yields `tasks.>` and vice versa.
 dotnet run --project dev/AppHost.Local
 ```
 
+The repo's `justfile` wraps this: `just run-aspire-local` (default
+`docker` mode, builds and runs the shipped Dockerfile image via
+`AddDockerfile`, needing `NUGET_GITHUB_TOKEN` or a `gh auth token` fallback
+to restore `FestinaLente.CodeStandards`), `just run-aspire-local local`
+(runs `AuthCallout.Host` from the working tree instead), `just
+run-aspire-local-release` (same, AppHost and samples in Release), and
+`just reset-aspire-local [local|docker]` (stop, rebuild, restart). `just
+bench` runs the callout's real-NATS latency benchmark/regression gate
+(p50 ≤ 25ms, p99 ≤ 50ms) against a Testcontainers NATS instance.
+
 Starts, in order: NATS (JetStream, external port `4222`), Keycloak (dev
 realm import from `AppHost.Local/realm/dev-realm.json`, host port `8083`),
 `AuthCallout.Host` (files source, `Source__Kind` implied by
