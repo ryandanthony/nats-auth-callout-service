@@ -28,14 +28,18 @@ public sealed class CalloutIdentityContext
     }
 
     /// <summary>Gets the verified assertion claims (callout-generated <c>id</c>, caller <c>sub</c>, <c>app</c>, <c>iss</c>, <c>exp</c>).</summary>
+    /// <value>The claims verified from the caller's assertion.</value>
     public AssertionClaims Claims { get; }
 
     /// <summary>Gets the caller's subject (<c>sub</c>) from the verified assertion.</summary>
+    /// <value>The <c>sub</c> claim.</value>
     public string Subject => Claims.Subject;
 
     /// <summary>Gets the callout-generated connection id (<c>id</c>) that keys the caller's stored OIDC token.</summary>
+    /// <value>The <c>id</c> claim.</value>
     public string ConnectionId => Claims.Id;
 
     /// <summary>Gets the application slug the assertion was scoped to (<c>app</c>).</summary>
+    /// <value>The <c>app</c> claim.</value>
     public string Application => Claims.Application;
 }

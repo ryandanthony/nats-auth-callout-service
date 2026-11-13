@@ -1,4 +1,15 @@
 <Solution>
+  <Folder Name="/dev/">
+    <Project Path="dev/AppHost.Local/AppHost.Local.csproj" />
+  </Folder>
+  <Folder Name="/dev/samples/">
+    <Project Path="dev/samples/LoadService/LoadService.csproj" />
+    <Project Path="dev/samples/NoteService/NoteService.csproj" />
+    <Project Path="dev/samples/TaskService/TaskService.csproj" />
+  </Folder>
+  <Folder Name="/dev/samples/Shared/">
+    <Project Path="dev/samples/Shared/SampleSupport.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/AuthCallout.Config.Files/AuthCallout.Config.Files.csproj" />
     <Project Path="src/AuthCallout.Config.K8s/AuthCallout.Config.K8s.csproj" />

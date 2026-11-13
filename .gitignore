@@ -35,3 +35,6 @@ dev/**/appsettings.*.local.json
 
 # Aspire K3s AppHost runtime state (Testcontainers/k3s kubeconfig + data, not source)
 dev/**/.k3s/
+
+# AppHost.Local --callout docker renders its container config here from config/ (DockerCalloutConfig)
+dev/AppHost.Local/config-docker/

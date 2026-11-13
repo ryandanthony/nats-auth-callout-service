@@ -7,8 +7,28 @@
 // AppHost.Local (doc 08 §Local development, "AppHost 1"): files-source callout + external
 // NATS + Keycloak dev IdP, this is the day-to-day inner loop. Editing config/apps/Note.yaml
 // hot-reloads live (FileRoutingConfigProvider's own file watcher, P10; doc 08's inner loop).
+//
+// `--callout local|docker` picks how the callout itself runs (everything else is identical):
+//   local  (default for a bare `dotnet run` / IDE launch): AuthCallout.Host as an Aspire
+//          project resource, i.e. the Debug/Release build of the working tree.
+//   docker (what every `just` recipe passes): the repo's own Dockerfile built and run as a
+//          container resource, i.e. the exact self-contained ReadyToRun image that ships, so
+//          latency seen here is the shipped binary's, not the dev build's (doc 08 §Latency).
+// Also settable as the `CALLOUT` environment variable / `callout` configuration key.
+
+using AppHost.Local;
+
+const string KeycloakName = "idp";
+const int KeycloakHostPort = 8083;
 
 var builder = DistributedApplication.CreateBuilder(args);
+
+var calloutMode = (builder.Configuration["callout"] ?? "local").Trim();
+var useDockerCallout = string.Equals(calloutMode, "docker", StringComparison.OrdinalIgnoreCase);
+if (!useDockerCallout && !string.Equals(calloutMode, "local", StringComparison.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException($"Unknown --callout value '{calloutMode}': expected 'local' or 'docker'.");
+}
 
 // NATS with JetStream, auth-callout-enabled (nats/server.conf - see that file's own comment
 // for why this can't use Aspire's AddNats helper: it always injects a global --user/--pass,
@@ -28,22 +48,59 @@ var nats = builder.AddContainer("nats", "nats", "2.14")
 
 // Keycloak dev IdP, importing the committed dev realm (clients/roles/users for both
 // samples, dev-only credentials - see dev/README.md). 8083 on the host: 8080 is
-// AuthCallout.Host's own pinned D21 health port, which the callout project binds directly
-// via Kestrel (not through an Aspire-managed endpoint), so Keycloak must not claim it; 8081
-// and 8082 can be taken by other local processes, so this loop uses 8083.
+// AuthCallout.Host's own pinned D21 health port (HostPorts.Health), used as its
+// ConfigureKestrel fallback whenever ASPNETCORE_URLS isn't set (bare `dotnet run`,
+// Docker/Kubernetes - see HealthAppBuilder). 8081 and 8082 can be taken by other local
+// processes, so this loop uses 8083.
 // Aspire's own AddKeycloak switches the endpoint to https automatically in run mode when a
 // dev HTTPS cert is available (ASP.NET Core's dotnet dev-certs), which is what makes the
 // issuer authority satisfy Microsoft.IdentityModel's HttpDocumentRetriever.RequireHttps
 // (P06/P08's production JWKS fetch path never relaxes this - see dev/README.md's "Keycloak
 // must be served over HTTPS" note for what breaks without it).
-var keycloak = builder.AddKeycloak("idp", 8083)
+var keycloak = builder.AddKeycloak(KeycloakName, KeycloakHostPort)
     .WithRealmImport("./realm");
 
-var callout = builder.AddProject<Projects.AuthCallout_Host>("callout")
-    .WaitFor(nats)
-    .WithReference(keycloak)
-    .WaitFor(keycloak)
-    .WithEnvironment("AUTHCALLOUT_BOOTSTRAP_PATH", Path.Combine(builder.AppHostDirectory, "config", "bootstrap.yaml"));
+// Single callout instance for the local inner loop. Multi-replica horizontal scale-out was
+// tried here (doc 08 §Multiple instances) but reverted: 3 callout replicas plus 3 load
+// replicas drove enough continuous trace volume that the Aspire dashboard's in-memory trace
+// buffer (fixed capacity, no persistence) rolled over within seconds, making it useless for
+// inspecting any specific request. Scale-out itself already proved out (queue-group sharing
+// confirmed, replica port collision fixed) — this is a dev-inner-loop trace-usability
+// trade-off, not a regression. Bump WithReplicas(N) back temporarily for replica-specific
+// investigation.
+//
+// Docker mode renders a container flavour of config/ into config-docker/ (git-ignored, kept
+// in sync with config/apps/ while the AppHost runs, see DockerCalloutConfig) and mounts it
+// at the image's default bootstrap path, /config. The container talks to NATS and Keycloak
+// over Aspire's container network (the `nats` / `idp.dev.internal` aliases), trusts the
+// ASP.NET Core dev cert Keycloak serves (WithDeveloperCertificateTrust), and publishes the
+// pinned D21 health port 8080 so `curl localhost:8080/readyz` works the same in both modes.
+// The image build restores FestinaLente.CodeStandards from GitHub Packages, so it needs the
+// Dockerfile's `nuget_github_token` BuildKit secret: NUGET_GITHUB_TOKEN (the justfile fills
+// it from `gh auth token`).
+using var dockerConfig = useDockerCallout
+    ? DockerCalloutConfig.Start(
+        sourceDirectory: Path.Combine(builder.AppHostDirectory, "config"),
+        outputDirectory: Path.Combine(builder.AppHostDirectory, "config-docker"),
+        keycloakHostPort: KeycloakHostPort,
+        keycloakResourceName: KeycloakName)
+    : null;
+
+IResourceBuilder<IResource> callout = dockerConfig is null
+    ? builder.AddProject<Projects.AuthCallout_Host>("callout")
+        .WaitFor(nats)
+        .WithReference(keycloak)
+        .WaitFor(keycloak)
+        .WithEnvironment("AUTHCALLOUT_BOOTSTRAP_PATH", Path.Combine(builder.AppHostDirectory, "config", "bootstrap.yaml"))
+    : builder.AddDockerfile("callout", contextPath: Path.Combine(builder.AppHostDirectory, "..", ".."))
+        .WithBuildSecret("nuget_github_token", builder.AddParameterFromConfiguration("nuget-github-token", "NUGET_GITHUB_TOKEN", secret: true))
+        .WithBindMount(dockerConfig.OutputDirectory, "/config", isReadOnly: true)
+        .WithHttpEndpoint(port: 8080, targetPort: 8080, name: "health")
+        .WithHttpHealthCheck("/readyz", endpointName: "health")
+        .WithOtlpExporter()
+        .WithDeveloperCertificateTrust(trust: true)
+        .WaitFor(nats)
+        .WaitFor(keycloak);
 
 // NATS_URI: the container-network URL for dependent resources (DevEnvironment.ReadNatsUrl,
 // dev/samples/Shared). nats isn't IResourceWithConnectionString (a plain AddContainer, see
@@ -71,7 +128,12 @@ builder.AddProject<Projects.TaskService>("task")
 // OTEL_SERVICE_NAME ("load") with a distinct service.instance.id, so the dashboard groups their
 // telemetry (load_connect_duration_ms) as one app instead of N unrelated ones.
 // LOAD_CONCURRENCY / LOAD_DELAY_MS / LOAD_DURATION_SEC apply to every replica.
-const int LoadInstances = 3;
+// LoadInstances pinned to 1 (was 3): 3 load replicas x 3 callout replicas drove enough
+// continuous trace volume that the Aspire dashboard's in-memory trace buffer (fixed
+// capacity, no persistence) rolled over within seconds, making it useless for inspecting any
+// specific request (same reasoning as callout's own single-instance comment above). Raise
+// back temporarily for replica-fan-out-specific investigation.
+const int LoadInstances = 1;
 var natsUri = ReferenceExpression.Create($"nats://{nats.GetEndpoint("tcp").Property(EndpointProperty.HostAndPort)}");
 builder.AddProject<Projects.LoadService>("load")
     .WithReplicas(LoadInstances)
