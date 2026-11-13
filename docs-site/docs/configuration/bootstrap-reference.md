@@ -98,6 +98,7 @@ anonymous:
 | `refreshInterval` | duration string | yes | Proactive re-fetch cadence per issuer. |
 | `fetchTimeout` | duration string | yes | Hard timeout on any single discovery/JWKS fetch (fail closed). |
 | `prewarmRequired` | boolean | yes | All issuers must warm before the service enters `Serving`. |
+| `allowInsecureHttp` | boolean | no (default `false`) | **Dev/test only.** Allows discovery and JWKS documents to be fetched over plain `http://`, e.g. a containerized callout against a plain-HTTP dev Keycloak in docker compose or Testcontainers. Only the transport check on those fetches is relaxed; token validation (signature, `iss`, `aud`, `exp`, algorithm allow-list) is unchanged. The service writes a `WARN:` line to stderr at startup when it is on. Never enable in production. |
 
 ## `Concurrency`
 

@@ -98,7 +98,12 @@
       "properties": {
         "refreshInterval": { "type": "string" },
         "fetchTimeout": { "type": "string" },
-        "prewarmRequired": { "type": "boolean" }
+        "prewarmRequired": { "type": "boolean" },
+        "allowInsecureHttp": {
+          "type": "boolean",
+          "default": false,
+          "description": "Dev/test only. Allow discovery/JWKS document fetches over plain http://. Token validation is unchanged."
+        }
       }
     },
     "concurrency": {

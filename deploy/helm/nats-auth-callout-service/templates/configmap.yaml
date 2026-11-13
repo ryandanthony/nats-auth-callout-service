@@ -64,6 +64,9 @@ data:
       refreshInterval: {{ .Values.bootstrap.jwks.refreshInterval | quote }}
       fetchTimeout: {{ .Values.bootstrap.jwks.fetchTimeout | quote }}
       prewarmRequired: {{ .Values.bootstrap.jwks.prewarmRequired }}
+      {{- if .Values.bootstrap.jwks.allowInsecureHttp }}
+      allowInsecureHttp: true
+      {{- end }}
     concurrency:
       maxDegreeOfParallelism: {{ .Values.bootstrap.concurrency.maxDegreeOfParallelism }}
       perRequestTimeout: {{ .Values.bootstrap.concurrency.perRequestTimeout | quote }}

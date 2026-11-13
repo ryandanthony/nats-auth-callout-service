@@ -30,9 +30,9 @@ public sealed class JwksCacheManager : IJwksCacheManager, IJwksKeyProvider, IDis
 
     /// <summary>Initializes a new instance of the <see cref="JwksCacheManager"/> class.</summary>
     /// <param name="activeConfigSource">The active config source to track the issuer set from.</param>
-    /// <param name="settings">Bootstrap JWKS cache manager settings (default refresh interval, fetch timeout).</param>
+    /// <param name="settings">Bootstrap JWKS cache manager settings (default refresh interval, fetch timeout, and <see cref="JwksSettings.AllowInsecureHttp"/>).</param>
     public JwksCacheManager(IActiveConfigSource activeConfigSource, JwksSettings settings)
-        : this(activeConfigSource, settings, new IssuerConfigurationManagerFactory())
+        : this(activeConfigSource, settings, new IssuerConfigurationManagerFactory(settings?.AllowInsecureHttp ?? false))
     {
     }
 

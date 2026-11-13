@@ -50,6 +50,10 @@ The whole batch is rejected (keep last-good) if any issuer:
 - sets `validateAudience: true` with no `audience`;
 - sets `clockSkew` above the cap or negative.
 
+### Transport for discovery/JWKS fetches
+
+Discovery and JWKS documents are fetched over HTTPS only (`HttpDocumentRetriever.RequireHttps = true`). Amendment (2026-11, [issue #2](https://github.com/ryandanthony/nats-auth-callout-service/issues/2)): the bootstrap flag `jwks.allowInsecureHttp` (default `false`) relaxes **only** this transport check, for dev/test setups where a containerized callout talks to a plain-HTTP dev IdP and a trusted certificate isn't practical inside the container. It is global (not per issuer), it is bootstrap-only so routing config can't turn it on, and the service writes a warning to stderr at startup when it is set. Every validation parameter in this ADR still applies unchanged. Production deployments must leave it off.
+
 ## Consequences
 
 - Expired-token acceptance shrinks from 5 minutes to 60 seconds by default, bounded and explicit.

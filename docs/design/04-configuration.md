@@ -67,7 +67,7 @@ The single shape the core consumes. Language-agnostic field view:
 - `serviceUserSeed: SecretRef?`
 - `assertionKeys: AssertionKey[]?` (signs identity assertions; a keyset with exactly one `active`, the rest verify-only, ADR 0011 / ADR 0014). Each: `{ kid, key: SecretRef, active }`.
 - `source`: which provider + its settings (directory path, CRD selector, or DB connection), plus watch health thresholds `{ warnStaleness, maxStaleness, reconnectBackoff }` (duration strings; dead-watch staleness bounds, [ADR 0017](../architecture-decision-log/0017-watch-loss-and-connection-loss-semantics.md))
-- `jwks`: `{ refreshInterval, fetchTimeout, prewarmRequired }` (JWKS cache manager settings; the manager prewarms all issuers before Serving and proactively refreshes on `refreshInterval`, doc 08)
+- `jwks`: `{ refreshInterval, fetchTimeout, prewarmRequired, allowInsecureHttp? }` (JWKS cache manager settings; the manager prewarms all issuers before Serving and proactively refreshes on `refreshInterval`, doc 08). `allowInsecureHttp` (default `false`, dev/test only) permits discovery/JWKS fetches over plain `http://`; see [ADR 0016](../architecture-decision-log/0016-token-validation-parameters.md) §Transport for discovery/JWKS fetches.
 - `concurrency`: `{ maxDegreeOfParallelism, perRequestTimeout, queueCapacity? }` (in-process parallelism and backpressure via `Parallel.ForEachAsync`, doc 08)
 - `anonymous`: `{ targetAccount, expiry, events?: EventSubjects }` — `expiry` (duration string) is the sole expiry source for anonymous grants, which carry no token `exp`
 

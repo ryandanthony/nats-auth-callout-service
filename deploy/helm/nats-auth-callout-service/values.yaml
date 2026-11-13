@@ -75,6 +75,9 @@ bootstrap:
     refreshInterval: 5m
     fetchTimeout: 5s
     prewarmRequired: true
+    # Dev/test only: allow discovery/JWKS fetches over plain http:// (e.g. an in-cluster dev
+    # Keycloak without TLS). Token validation is unchanged. Never enable in production.
+    allowInsecureHttp: false
   concurrency:
     maxDegreeOfParallelism: 64
     perRequestTimeout: 1500ms
