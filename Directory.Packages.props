@@ -44,9 +44,9 @@
   </ItemGroup>
 
   <ItemGroup Label="Hosting / resilience">
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.9.0" />
-    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.15" />
   </ItemGroup>
 
   <ItemGroup Label="Observability">
@@ -75,11 +75,11 @@
   </ItemGroup>
 
   <ItemGroup Label="Aspire dev loop (P15, dev/ only — not referenced by any shipped src/ project)">
-    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.5.3" />
-    <PackageVersion Include="Aspire.Hosting.Nats" Version="13.5.3" />
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.6.5" />
+    <PackageVersion Include="Aspire.Hosting.Nats" Version="13.6.5" />
     <!-- Keycloak's Aspire integration is prerelease-only (no stable release exists yet);
          acceptable because it is dev-loop tooling that never ships in the service image. -->
-    <PackageVersion Include="Aspire.Hosting.Keycloak" Version="13.5.3-preview.1.26425.3" />
-    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.K3s" Version="13.5.0" />
+    <PackageVersion Include="Aspire.Hosting.Keycloak" Version="13.6.5-preview.1.26559.7" />
+    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.K3s" Version="13.6.1" />
   </ItemGroup>
 </Project>
