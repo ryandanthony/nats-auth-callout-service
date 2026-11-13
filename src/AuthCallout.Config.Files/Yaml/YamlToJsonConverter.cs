@@ -41,12 +41,18 @@ public static class YamlToJsonConverter
         {
             // An empty file: treat as an empty object so the mapper's "required field missing"
             // rules produce a normal, deterministic rejection rather than a special-cased error.
-            return JsonNode.Parse("{}")!.Deserialize<JsonElement>();
+            // JsonDocument.Parse (not JsonNode.Deserialize<JsonElement>) is the trim/AOT-safe
+            // path: it parses text directly into a JsonElement tree without going through
+            // JsonSerializer's reflection-based (de)serialization, so it carries no
+            // RequiresUnreferencedCode warning under PublishTrimmed (doc 08 §Runtime & trimming).
+            using var emptyDoc = JsonDocument.Parse("{}");
+            return emptyDoc.RootElement.Clone();
         }
 
         var node = ConvertNode(yamlStream.Documents[0].RootNode);
         var json = node is null ? "null" : node.ToJsonString();
-        return JsonSerializer.Deserialize<JsonElement>(json);
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement.Clone();
     }
 
     private static JsonNode? ConvertNode(YamlNode node) => node switch

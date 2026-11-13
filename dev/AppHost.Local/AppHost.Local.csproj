@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <Sdk Name="Aspire.AppHost.Sdk" Version="13.5.3" />
+  <Sdk Name="Aspire.AppHost.Sdk" Version="13.6.5" />
 
   <!-- P15 AppHost.Local (doc 08 §Local development, "AppHost 1 - AppHost.Local (files source,
        external NATS)"): the day-to-day inner loop. Files-source callout, NATS w/ JetStream on
@@ -21,7 +21,9 @@
          statement AppHost.cs, which declares no type. CA1017 fires because Aspire's
          source-generated Projects.* types are externally visible; this AppHost is never
          COM-consumed, so ComVisible(false) would be a no-op ceremony, not a real fix. -->
-    <NoWarn>$(NoWarn);MA0048;CA1017</NoWarn>
+    <!-- ASPIRE010 (Aspire 13.6+): this AppHost runs via `dotnet run` / `just`, not the Aspire CLI
+         bundle, so AspireUseCliBundle stays at its default false (same behaviour as 13.5). -->
+    <NoWarn>$(NoWarn);MA0048;CA1017;ASPIRE010</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -39,6 +41,7 @@
     <ProjectReference Include="../../src/AuthCallout.Host/AuthCallout.Host.csproj" />
     <ProjectReference Include="../samples/NoteService/NoteService.csproj" />
     <ProjectReference Include="../samples/TaskService/TaskService.csproj" />
+    <ProjectReference Include="../samples/LoadService/LoadService.csproj" />
   </ItemGroup>
 
 </Project>

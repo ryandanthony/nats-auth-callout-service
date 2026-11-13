@@ -1,6 +1,9 @@
 # .NET build output
 bin/
 obj/
+
+# BenchmarkDotNet run output (tests/AuthCallout.Benchmarks), written at the repo root
+BenchmarkDotNet.Artifacts/
 out/
 
 # Visual Studio / Rider
@@ -32,3 +35,6 @@ dev/**/appsettings.*.local.json
 
 # Aspire K3s AppHost runtime state (Testcontainers/k3s kubeconfig + data, not source)
 dev/**/.k3s/
+
+# AppHost.Local --callout docker renders its container config here from config/ (DockerCalloutConfig)
+dev/AppHost.Local/config-docker/

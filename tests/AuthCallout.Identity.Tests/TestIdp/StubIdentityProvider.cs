@@ -203,7 +203,7 @@ public sealed class StubIdentityProvider : IDisposable
             HttpListenerContext context;
             try
             {
-                context = await _listener.GetContextAsync().ConfigureAwait(false);
+                context = await _listener.GetContextAsync();
             }
             catch (Exception ex) when (ex is HttpListenerException or ObjectDisposedException or InvalidOperationException)
             {

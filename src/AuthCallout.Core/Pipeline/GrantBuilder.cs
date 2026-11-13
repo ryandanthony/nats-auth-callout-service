@@ -50,7 +50,7 @@ internal static class GrantBuilder
             return GrantBuildResult.Deny(variableError);
         }
 
-        var subscribe = BuildSubscribe(application, profile, resolvedVariables, claims, out var selfLookupKey, out var readBuckets);
+        var subscribe = BuildSubscribe(application, profile, resolvedVariables, claims, inboxPrincipal: principal ?? name!, out var selfLookupKey, out var readBuckets);
         var publish = BuildPublish(profile, resolvedVariables, readBuckets);
 
         var decision = new GrantedDecision(
@@ -98,6 +98,7 @@ internal static class GrantBuilder
         Profile profile,
         IReadOnlyDictionary<string, IReadOnlyList<string>> resolvedVariables,
         IClaimsAccessor claims,
+        string inboxPrincipal,
         out string? selfLookupKey,
         out IReadOnlyList<string> readBuckets)
 #pragma warning restore S4017
@@ -132,9 +133,14 @@ internal static class GrantBuilder
         }
 
         // Reply path for the JetStream KV read requests added on the publish side: the KV
-        // client receives stream-info / direct-get replies on its connection inbox. Added once
-        // because the grant reads at least one KV bucket (keys + discovery are unconditional).
-        SubjectListBuilder.AddOne(subscribe, seen, AppSlug.ClientInboxSubscribeSubject);
+        // client receives stream-info / direct-get replies on its connection inbox. Scoped to
+        // this connection's own principal-derived prefix (never the account-wide _INBOX.>,
+        // which would let any authenticated client read every other client's replies); the
+        // client must set the matching custom inbox prefix (AppSlug.ClientInboxPrefix).
+        // Added once because the grant reads at least one KV bucket (keys + discovery are
+        // unconditional). The principal falls back to the minted name, which NameResolver
+        // guarantees non-null by this point (see the Build call site).
+        SubjectListBuilder.AddOne(subscribe, seen, slug.ClientInboxSubscribeSubject(inboxPrincipal));
 
         readBuckets = buckets;
         return subscribe;

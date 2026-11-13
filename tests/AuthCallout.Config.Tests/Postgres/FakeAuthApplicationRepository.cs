@@ -68,7 +68,7 @@ public sealed class FakeAuthApplicationRepository : IAuthApplicationRepository
     public async IAsyncEnumerable<NotificationSignal> ListenForChangesAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        await foreach (var item in _notifications.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in _notifications.Reader.ReadAllAsync(cancellationToken))
         {
             yield return item;
         }

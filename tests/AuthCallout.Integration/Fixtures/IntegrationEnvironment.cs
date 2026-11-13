@@ -28,12 +28,12 @@ public sealed class IntegrationEnvironment : IAsyncLifetime
     /// <inheritdoc />
     public async Task InitializeAsync()
     {
-        await Task.WhenAll(Nats.InitializeAsync(), Keycloak.InitializeAsync()).ConfigureAwait(false);
+        await Task.WhenAll(Nats.InitializeAsync(), Keycloak.InitializeAsync());
     }
 
     /// <inheritdoc />
     public async Task DisposeAsync()
     {
-        await Task.WhenAll(Nats.DisposeAsync(), Keycloak.DisposeAsync()).ConfigureAwait(false);
+        await Task.WhenAll(Nats.DisposeAsync(), Keycloak.DisposeAsync());
     }
 }

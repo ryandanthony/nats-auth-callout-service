@@ -73,12 +73,17 @@ environment variables ([D22](https://github.com/ryandanthony/nats-auth-callout-s
 | `OTEL_SERVICE_NAME` | Service name reported to your OTel backend. Falls back to `nats-auth-callout-service` if unset. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP collector endpoint. The SDK no-ops (exports nothing) if unset. |
 
-At minimum: total requests, grants by outcome, denials by reason,
-validation failures, config reloads (applied/rejected), events
-published/dropped, token-store writes/failures, JWKS fetches/cache hits,
-current state (idle/serving), plus the staleness metrics
-`config_last_sync_timestamp`, `config_staleness_seconds`,
-`watch_reconnects_total`, `watch_relists_total`, `watch_failures_total`.
+Current instruments: `callout_requests_granted_total`,
+`callout_requests_denied_total`, `callout_requests_dropped_total` (replies
+never sent — malformed, xkey mismatch, no active config, per-request
+timeout, or unexpected failure), the `callout_request_duration_ms`
+histogram (receive-to-reply latency, tagged `outcome=granted|denied`),
+`events_publish_failures_total` (swallowed auth-outcome event publish
+failures), `identity_orphaned_buckets_total`, `config_reloads_applied_total`,
+`config_reloads_rejected_total`, the staleness gauges
+`config_last_sync_timestamp`/`config_staleness_seconds`,
+`watch_reconnects_total`, and the `service_state` gauge (current
+`ServiceState`: `0=Starting,1=Idle,2=Serving,3=Stopping`).
 
 **Traces**: one span per auth request covering the four resolution stages
 (issuer → validate → app/profile → mint), so latency and failure

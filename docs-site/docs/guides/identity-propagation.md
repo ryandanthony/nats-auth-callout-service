@@ -13,6 +13,22 @@ subjects. Grounds: [ADR 0010](https://github.com/ryandanthony/nats-auth-callout-
 [ADR 0011](https://github.com/ryandanthony/nats-auth-callout-service/blob/main/docs/architecture-decision-log/0011-signed-identity-assertion.md),
 [doc 06](https://github.com/ryandanthony/nats-auth-callout-service/blob/main/docs/design/06-identity-propagation-sequence.md).
 
+## NuGet packages for .NET integrators
+
+The naming rules and the verifier are published to nuget.org, so a .NET client or subscriber uses the same code as the callout itself instead of copying it:
+
+```bash
+dotnet add package AuthCallout.Identity   # brings AuthCallout.Contracts and AuthCallout.Core
+```
+
+| Package | What you use from it |
+|---|---|
+| `AuthCallout.Contracts` | `AppSlug`: bucket names (`DiscoveryBucket`, `AssertionsBucket`, `OidcTokensBucket`, `AssertionKeysBucket`), `DiscoveryDescriptorKey`, KV key derivation (`SanitizeKeySegment`, `DeriveKeySegment`), and `ClientInboxPrefix`. `AssertionClaims`. |
+| `AuthCallout.Identity` | `AssertionSigner.Verify(compactJwt, publicKey)` to check a `Callout-Identity` header. |
+| `AuthCallout.Core` | Dependency of Identity. Not normally referenced directly. |
+
+Package versions match the service release tag (`v1.2.3` publishes `1.2.3`). The repo's [`dev/samples/Shared`](https://github.com/ryandanthony/nats-auth-callout-service/tree/main/dev/samples/Shared) shows the full flow built on these packages: discovery, self-assertion fetch, verification and OIDC token resolution.
+
 ## The full sequence
 
 ```mermaid
@@ -31,13 +47,13 @@ sequenceDiagram
     A->>A: Generate connection id
     A->>N: KV PUT callout.apps.{app}.oidc-tokens.{id} = OIDC JWT (TTL)
     A->>A: Sign identity assertion binding id, sub, app, iss, exp
-    A->>N: KV PUT callout.apps.{app}.assertions.{jti} = signed assertion (TTL)
+    A->>N: KV PUT callout.apps.{app}.assertions.{derived jti key} = signed assertion (TTL)
     A->>N: Signed user JWT (grant: read own assertion + keys + discovery)
     N-->>C: Connection authorized
     Note over C,N: Client discovers behavior, fetches its own assertion once
     C->>N: KV GET callout.apps.{app-slug}.discovery
     N-->>C: Descriptor (enabled, header, buckets, kid)
-    C->>N: KV GET callout.apps.{app}.assertions.{jti}
+    C->>N: KV GET callout.apps.{app}.assertions.{derived jti key}
     N-->>C: Signed identity assertion (cached for connection life)
     Note over C,S: Publish with verifiable identity
     C->>N: PUBLISH msg + header Callout-Identity: assertion
@@ -87,6 +103,30 @@ if (claims is null)
 }
 var oidcToken = await resolver.ResolveOidcTokenAsync(claims.Id); // requires autoAddSessionAccess
 ```
+
+## Client connection requirements
+
+Two things a propagation-consuming client must derive from its own token
+(both via `AppSlug` helpers, mirrored in the samples' shared library):
+
+- **Self-lookup key.** The assertion entry is keyed by the *derived* form of
+  the token's `jti` (or `sub` fallback): sanitized text plus a 16-hex SHA-256
+  suffix (`AppSlug.DeriveKeySegment`), so sanitization aliases of different
+  principals can never collide. Use `CalloutSelfAssertion.FetchAsync` (or the
+  same derivation) — never the raw `jti`.
+- **Inbox prefix.** The callout grants a *scoped* reply inbox,
+  `_INBOX.{app-slug}.{derived-principal}.>` — never the account-wide
+  `_INBOX.>` (which would let any authenticated client read every other
+  client's request replies). Set the matching custom prefix on the
+  connection (`NatsOpts.InboxPrefix` in NATS.NET, `custom_inbox_prefix`
+  elsewhere): `AppSlug.ClientInboxPrefix(principal)` with the token's `sub`
+  (falling back to `azp`); see `CalloutInboxPrefix.For` in the samples.
+  Without it, KV reads and request-replies silently time out (the reply
+  subscription is denied server-side).
+
+Responder services answering request-reply additionally need
+`publish: ["_INBOX.{app-slug}.>"]` in their profile grant (publishing a
+reply is a far weaker capability than subscribing to inboxes).
 
 ## Discovery descriptor
 

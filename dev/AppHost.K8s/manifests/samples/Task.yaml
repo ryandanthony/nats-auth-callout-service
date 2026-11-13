@@ -29,7 +29,7 @@ spec:
       grant:
         # Only the app's own subjects; the callout auto-adds KV reads + the JetStream wire-level
         # subjects a real KV client needs (ADR 0013 §JetStream wire-level subjects).
-        publish: [tasks.dev.>]
-        subscribe: [tasks.dev.>]
+        publish: [tasks.>, wolverine.response]
+        subscribe: [tasks.>, wolverine.response]
       nameClaim: preferred_username
       autoAddSessionAccess: true

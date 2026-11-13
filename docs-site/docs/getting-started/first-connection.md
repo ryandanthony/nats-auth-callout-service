@@ -6,8 +6,9 @@ sidebar_position: 4
 
 This walks through what happens on a real connection, using the
 [`NoteService` sample](https://github.com/ryandanthony/nats-auth-callout-service/tree/main/dev/samples/NoteService)
-as the reference client (`dotnet run --project dev/AppHost.Local` runs it
-for you, plus a Keycloak realm and NATS).
+as the reference client (`just run-aspire-local`, or `dotnet run --project
+dev/AppHost.Local` directly, runs it for you, plus a Keycloak realm and
+NATS).
 
 ## 1. Get an OIDC access token
 
@@ -27,6 +28,11 @@ await using var client = new NatsClient(new NatsOpts
 {
     Url = natsUrl,
     AuthOpts = new NatsAuthOpts { Token = token },
+
+    // The callout grants a scoped reply inbox (_INBOX.{app-slug}.{principal}.>),
+    // not the account-wide _INBOX.>; the connection must use the matching
+    // prefix or KV reads/request-replies silently time out.
+    InboxPrefix = CalloutInboxPrefix.For("notes", token),
 });
 await client.ConnectAsync();
 ```
@@ -56,11 +62,15 @@ var assertion = descriptor.IdentityPropagation.Enabled
     : null;
 
 var headers = new NatsHeaders { { descriptor.IdentityPropagation.Header, assertion } };
-await client.Connection.PublishAsync("notes.dev.hello", "note #1", headers: headers);
+await client.Connection.PublishAsync("notes.hello", "note #1", headers: headers);
 ```
 
 That's the full happy path: OIDC token in, scoped NATS grant + a verifiable
-identity header out. See [Identity propagation](../guides/identity-propagation)
+identity header out. (This page uses the raw NATS.NET client to show the
+callout flow directly; the `dev/samples` `NoteService`/`TaskService` do the
+same thing on top of [Wolverine](https://wolverinefx.net), attaching the
+identity header via a message middleware — see [`dev/README.md`](https://github.com/ryandanthony/nats-auth-callout-service/blob/main/dev/README.md).)
+See [Identity propagation](../guides/identity-propagation)
 for how a subscriber verifies that header and resolves your OIDC claims, and
 [Authorization model](../guides/authorization-model) for how profiles,
 `match`, and template variables decide the grant.

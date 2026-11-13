@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Real-NATS (Testcontainers) BenchmarkDotNet suite for the callout's request-handling
+       latency goal (p50<=25ms, p99<=50ms server receive-to-reply, callout_request_duration_ms).
+       Two purposes: (1) prove the goal is met against real infrastructure, not a mock; (2) a
+       repeatable regression gate — `dotnet run -c Release` exits nonzero the moment a future
+       change pushes the real, measured percentiles past the goal. Reuses the exact fixtures
+       (NatsFixture/KeycloakFixture/HostFixture) tests/AuthCallout.Integration already proves
+       against the real production ComponentGraph wiring, so there is one source of truth for
+       "how do I stand up a real callout instance in-process," not a second copy that could
+       drift from it. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- BenchmarkDotNet enforces a Release build (JitOptimizationsValidator) by default; this
+         project is only ever meant to be run via `dotnet run -c Release`, never `dotnet test`. -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="NATS.Net" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reuses NatsFixture/KeycloakFixture/HostFixture/IntegrationRealm/TestApplications/JwtInspector
+         directly (all public) rather than duplicating the real-dependency wiring P14 already owns. -->
+    <ProjectReference Include="..\AuthCallout.Integration\AuthCallout.Integration.csproj" />
+    <!-- Direct reference (not relied on transitively) for CalloutResponderMetrics' public
+         meter/instrument name constants, the exact SLI this suite gates on. -->
+    <ProjectReference Include="..\..\src\AuthCallout.Nats\AuthCallout.Nats.csproj" />
+  </ItemGroup>
+
+</Project>

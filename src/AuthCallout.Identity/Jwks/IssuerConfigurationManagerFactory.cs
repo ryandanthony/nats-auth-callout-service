@@ -39,8 +39,19 @@ public class IssuerConfigurationManagerFactory
 
     /// <summary>Initializes a new instance of the <see cref="IssuerConfigurationManagerFactory"/> class using the default <see cref="HttpDocumentRetriever"/> transport (HTTPS required).</summary>
     public IssuerConfigurationManagerFactory()
+        : this(allowInsecureHttp: false)
     {
-        _requireHttps = true;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="IssuerConfigurationManagerFactory"/> class using the default
+    /// <see cref="HttpDocumentRetriever"/> transport, with HTTPS required unless
+    /// <paramref name="allowInsecureHttp"/> is set (bootstrap <c>jwks.allowInsecureHttp</c>, dev/test only).
+    /// </summary>
+    /// <param name="allowInsecureHttp">When true, discovery/JWKS documents may be fetched over plain <c>http://</c>.</param>
+    public IssuerConfigurationManagerFactory(bool allowInsecureHttp)
+    {
+        _requireHttps = !allowInsecureHttp;
     }
 
     /// <summary>

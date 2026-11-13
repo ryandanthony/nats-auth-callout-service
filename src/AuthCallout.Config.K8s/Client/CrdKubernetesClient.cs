@@ -64,7 +64,7 @@ public sealed class CrdKubernetesClient : ICrdKubernetesClient, IDisposable
             version: Version,
             resourcePlural: Plural,
             labelSelector: _ownerLabelSelector,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+            cancellationToken: cancellationToken);
 
         var list = (JsonElement)response.Body;
         var resourceVersion = list.GetProperty("metadata").GetProperty("resourceVersion").GetString() ?? string.Empty;
@@ -92,7 +92,7 @@ public sealed class CrdKubernetesClient : ICrdKubernetesClient, IDisposable
         await using var enumerator = events.GetAsyncEnumerator(cancellationToken);
         while (true)
         {
-            var next = await TryMoveNextAsync(enumerator).ConfigureAwait(false);
+            var next = await TryMoveNextAsync(enumerator);
             if (next is null)
             {
                 yield break;
@@ -138,7 +138,7 @@ public sealed class CrdKubernetesClient : ICrdKubernetesClient, IDisposable
                 namespaceParameter: resource.Namespace,
                 plural: Plural,
                 name: resource.Name,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+                cancellationToken: cancellationToken);
         }
         catch (HttpOperationException)
         {
@@ -189,7 +189,7 @@ public sealed class CrdKubernetesClient : ICrdKubernetesClient, IDisposable
     {
         try
         {
-            if (!await enumerator.MoveNextAsync().ConfigureAwait(false))
+            if (!await enumerator.MoveNextAsync())
             {
                 return null;
             }

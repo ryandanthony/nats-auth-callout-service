@@ -40,7 +40,7 @@ Accepting an HMAC algorithm while trusting JWKS-published public keys enables al
 
 ### Placement
 
-These fields extend the existing per-issuer `issuer` block in the canonical model ([ADR 0007](./0007-internal-configuration-model.md)); they are not a new config section and not per-profile. All applications sharing an issuer get consistent validation.
+These fields extend the existing per-issuer `issuer` block in the canonical model ([ADR 0007](./0007-internal-configuration-model.md)); they are not a new config section and not per-profile. All applications sharing an issuer get consistent validation — **enforced at config load**: the aggregate validator's `divergent-issuer-config` rule rejects any config where two applications share an `authority` but differ in any issuer-block field (structural equality over the whole `IssuerConfig`). Validation runs once per token against the shared authority's parameters, so a divergent block would otherwise make effective strictness depend on candidate ordering.
 
 ### Config-load validation (fail closed, [ADR 0006](./0006-config-reload-and-failure-semantics.md))
 
@@ -49,6 +49,10 @@ The whole batch is rejected (keep last-good) if any issuer:
 - lists `HS*` or `none` in `allowedAlgorithms`, or lists an unknown algorithm;
 - sets `validateAudience: true` with no `audience`;
 - sets `clockSkew` above the cap or negative.
+
+### Transport for discovery/JWKS fetches
+
+Discovery and JWKS documents are fetched over HTTPS only (`HttpDocumentRetriever.RequireHttps = true`). Amendment (2026-11, [issue #2](https://github.com/ryandanthony/nats-auth-callout-service/issues/2)): the bootstrap flag `jwks.allowInsecureHttp` (default `false`) relaxes **only** this transport check, for dev/test setups where a containerized callout talks to a plain-HTTP dev IdP and a trusted certificate isn't practical inside the container. It is global (not per issuer), it is bootstrap-only so routing config can't turn it on, and the service writes a warning to stderr at startup when it is set. Every validation parameter in this ADR still applies unchanged. Production deployments must leave it off.
 
 ## Consequences
 

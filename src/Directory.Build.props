@@ -1,0 +1,41 @@
+<Project>
+  <!-- Chain to the repo-root Directory.Build.props (MSBuild only auto-imports the nearest one). -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!--
+    NuGet packaging for src/. Only the integration surface ships as packages (doc 06 / ADR 0010-0014:
+    what a client or subscriber needs to work with the callout): AuthCallout.Contracts (AppSlug bucket,
+    key and inbox naming, AssertionClaims), AuthCallout.Identity (AssertionSigner.Verify), and
+    AuthCallout.Core because Identity references it (ClaimsAccessor). Every other src/ project is the
+    service itself and stays IsPackable=false. Published to nuget.org from release.yml on v* tags via
+    Trusted Publishing.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'AuthCallout.Contracts' or '$(MSBuildProjectName)' == 'AuthCallout.Core' or '$(MSBuildProjectName)' == 'AuthCallout.Identity'">
+    <IsPackable>true</IsPackable>
+    <PackageId>$(MSBuildProjectName)</PackageId>
+    <Authors>Ryan Anthony</Authors>
+    <Copyright>Copyright (c) Ryan Anthony</Copyright>
+    <PackageProjectUrl>https://ryandanthony.github.io/nats-auth-callout-service/</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ryandanthony/nats-auth-callout-service</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>nats;auth-callout;oidc;jwt;nkeys;identity</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <None Include="$(MSBuildProjectDirectory)/README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>

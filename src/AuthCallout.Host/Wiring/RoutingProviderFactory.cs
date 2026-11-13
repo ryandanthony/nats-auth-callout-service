@@ -41,7 +41,7 @@ public static class RoutingProviderFactory
                 return new CrdRoutingConfigProvider(source.K8sSettings!);
 
             case SourceKind.Postgres:
-                return await CreatePostgresAsync(source.PostgresSettings!, secretResolver, cancellationToken).ConfigureAwait(false);
+                return await CreatePostgresAsync(source.PostgresSettings!, secretResolver, cancellationToken);
 
             default:
                 throw new InvalidOperationException($"Unrecognized SourceKind '{source.Kind}'.");
@@ -51,7 +51,7 @@ public static class RoutingProviderFactory
     private static async Task<IRoutingConfigProvider> CreatePostgresAsync(
         PostgresSourceSettings settings, ISecretResolver secretResolver, CancellationToken cancellationToken)
     {
-        using var resolved = await secretResolver.ResolveAsync(settings.ConnectionString, cancellationToken).ConfigureAwait(false);
+        using var resolved = await secretResolver.ResolveAsync(settings.ConnectionString, cancellationToken);
         var repository = new PostgresAuthApplicationRepository(resolved.Reveal(), settings.NotifyChannel);
         return new PostgresRoutingConfigProvider(repository, settings.PollInterval.Value);
     }

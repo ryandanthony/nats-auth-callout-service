@@ -57,7 +57,7 @@ public sealed class KeysPublisher
         // BucketProvisioner). Uses BucketProvisioner.BucketConfig so the marker-TTL setting
         // matches — a bare NatsKVConfig here would make the server reject the update of an
         // already-provisioned bucket ("message TTL status can not be disabled").
-        var store = await _kvContext.CreateOrUpdateStoreAsync(BucketProvisioner.BucketConfig(AppSlug.AssertionKeysBucket), cancellationToken).ConfigureAwait(false);
+        var store = await _kvContext.CreateOrUpdateStoreAsync(BucketProvisioner.BucketConfig(AppSlug.AssertionKeysBucket), cancellationToken);
 
         var desiredKids = new HashSet<string>(StringComparer.Ordinal);
         string? activeKid = null;
@@ -69,27 +69,27 @@ public sealed class KeysPublisher
                 activeKid = entry.Kid;
             }
 
-            await store.PutAsync(entry.Kid, entry.PublicKey, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await store.PutAsync(entry.Kid, entry.PublicKey, cancellationToken: cancellationToken);
         }
 
         if (activeKid is not null)
         {
-            await store.PutAsync(AppSlug.AssertionKeysCurrentKey, activeKid, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await store.PutAsync(AppSlug.AssertionKeysCurrentKey, activeKid, cancellationToken: cancellationToken);
         }
 
-        await RetireStaleKeysAsync(store, desiredKids, cancellationToken).ConfigureAwait(false);
+        await RetireStaleKeysAsync(store, desiredKids, cancellationToken);
     }
 
     private static async Task RetireStaleKeysAsync(INatsKVStore store, HashSet<string> desiredKids, CancellationToken cancellationToken)
     {
-        await foreach (var key in store.GetKeysAsync(cancellationToken: cancellationToken).ConfigureAwait(false))
+        await foreach (var key in store.GetKeysAsync(cancellationToken: cancellationToken))
         {
             if (string.Equals(key, AppSlug.AssertionKeysCurrentKey, StringComparison.Ordinal) || desiredKids.Contains(key))
             {
                 continue;
             }
 
-            await store.DeleteAsync(key, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await store.DeleteAsync(key, cancellationToken: cancellationToken);
         }
     }
 }

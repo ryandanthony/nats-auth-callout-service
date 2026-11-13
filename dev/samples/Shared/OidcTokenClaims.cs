@@ -33,6 +33,22 @@ public static class OidcTokenClaims
     /// <returns>The <c>sub</c> claim value, or null if absent or the token cannot be parsed.</returns>
     public static string? ReadSub(string compactJwt) => ReadClaim(compactJwt, "sub");
 
+    /// <summary>Reads the token's <c>exp</c> claim as a UTC instant, if present.</summary>
+    /// <param name="compactJwt">The compact JWT.</param>
+    /// <returns>The expiry instant, or null if absent or the token cannot be parsed.</returns>
+    public static DateTimeOffset? ReadExpiry(string compactJwt)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(compactJwt);
+
+        if (!Handler.CanReadToken(compactJwt))
+        {
+            return null;
+        }
+
+        var exp = Handler.ReadJwtToken(compactJwt).Payload.Expiration;
+        return exp is { } seconds ? DateTimeOffset.FromUnixTimeSeconds(seconds) : null;
+    }
+
     /// <summary>Reads an arbitrary top-level claim from a compact JWT's payload.</summary>
     /// <param name="compactJwt">The compact JWT.</param>
     /// <param name="claimType">The claim name to read.</param>

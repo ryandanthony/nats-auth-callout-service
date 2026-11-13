@@ -50,19 +50,19 @@ internal sealed class DirectoryWatcherSupervisor
             var (watcher, created) = TryCreateWatcher(onFileEvent);
             if (!created)
             {
-                backoff = await DelayAndDoubleBackoffAsync(backoff, token).ConfigureAwait(false);
+                backoff = await DelayAndDoubleBackoffAsync(backoff, token);
                 continue;
             }
 
             backoff = _minBackoff;
-            await RunUntilDeadOrCancelledAsync(watcher!, token).ConfigureAwait(false);
+            await RunUntilDeadOrCancelledAsync(watcher!, token);
 
             if (token.IsCancellationRequested)
             {
                 return;
             }
 
-            backoff = await DelayAndDoubleBackoffAsync(backoff, token).ConfigureAwait(false);
+            backoff = await DelayAndDoubleBackoffAsync(backoff, token);
         }
     }
 
@@ -90,7 +90,7 @@ internal sealed class DirectoryWatcherSupervisor
 
 #pragma warning disable VSTHRD003 // Awaiting the watcher's own lifetime signal (die-or-cancel), not a foreign in-flight task; this is the intended synchronization point.
             await using var registration = token.Register(static state => ((TaskCompletionSource)state!).TrySetResult(), died);
-            await died.Task.ConfigureAwait(false);
+            await died.Task;
 #pragma warning restore VSTHRD003
         }
     }
@@ -121,7 +121,7 @@ internal sealed class DirectoryWatcherSupervisor
     {
         try
         {
-            await Task.Delay(backoff, token).ConfigureAwait(false);
+            await Task.Delay(backoff, token);
         }
         catch (OperationCanceledException)
         {

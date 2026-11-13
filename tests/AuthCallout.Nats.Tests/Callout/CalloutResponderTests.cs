@@ -289,7 +289,7 @@ public sealed class CalloutResponderTests
                 var token = ci.Arg<CancellationToken>();
                 if (string.Equals(request.UserNKey, "HANG", StringComparison.Ordinal))
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(10), token).ConfigureAwait(false);
+                    await Task.Delay(TimeSpan.FromSeconds(10), token);
                     return (Decision)CalloutTestBuilders.Granted();
                 }
 
@@ -325,7 +325,7 @@ public sealed class CalloutResponderTests
                 var observed = Interlocked.Increment(ref currentConcurrency);
                 InterlockedMax(ref maxObservedConcurrency, observed);
 
-                await release.WaitAsync(ci.Arg<CancellationToken>()).ConfigureAwait(false);
+                await release.WaitAsync(ci.Arg<CancellationToken>());
 
                 Interlocked.Decrement(ref currentConcurrency);
 
@@ -403,6 +403,103 @@ public sealed class CalloutResponderTests
 
         harness.AssertNeverReplied();
         Assert.Contains(harness.Diagnostics, d => d.Contains("xkey is configured", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // ---- per-decision success/failure metrics (callout method invoked) ----
+
+    [Fact]
+    public async Task RunAsync_GrantedDecision_IncrementsGrantedCounter()
+    {
+        var pipeline = Substitute.For<IResolutionPipeline>();
+        pipeline.ResolveAsync(Arg.Any<AuthRequest>(), Arg.Any<ActiveConfig>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Decision>(CalloutTestBuilders.Granted()));
+        var harness = new ResponderHarness(new ResponderHarnessOptions { Pipeline = pipeline });
+
+        using var counters = new ResponderCounterListener();
+        await harness.RunOneAsync(CalloutTestBuilders.BuildRequestPayload());
+
+        Assert.Equal(1, counters.Granted);
+        Assert.Equal(0, counters.Denied);
+        Assert.Equal(0, counters.Dropped);
+    }
+
+    [Fact]
+    public async Task RunAsync_DeniedDecision_IncrementsDeniedCounter()
+    {
+        var pipeline = Substitute.For<IResolutionPipeline>();
+        pipeline.ResolveAsync(Arg.Any<AuthRequest>(), Arg.Any<ActiveConfig>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Decision>(CalloutTestBuilders.Denied()));
+        var harness = new ResponderHarness(new ResponderHarnessOptions { Pipeline = pipeline });
+
+        using var counters = new ResponderCounterListener();
+        await harness.RunOneAsync(CalloutTestBuilders.BuildRequestPayload());
+
+        Assert.Equal(0, counters.Granted);
+        Assert.Equal(1, counters.Denied);
+        Assert.Equal(0, counters.Dropped);
+    }
+
+    [Fact]
+    public async Task RunAsync_MalformedRequest_IncrementsDroppedCounter()
+    {
+        var harness = new ResponderHarness();
+
+        using var counters = new ResponderCounterListener();
+        await harness.RunOneAsync(Encoding.UTF8.GetBytes("not a valid nats jwt"));
+
+        Assert.Equal(0, counters.Granted);
+        Assert.Equal(0, counters.Denied);
+        Assert.Equal(1, counters.Dropped);
+    }
+
+    // ---- per-request duration (receive to reply) ----
+
+    [Fact]
+    public async Task RunAsync_RepliedRequest_RecordsRequestDuration()
+    {
+        var pipeline = Substitute.For<IResolutionPipeline>();
+        pipeline.ResolveAsync(Arg.Any<AuthRequest>(), Arg.Any<ActiveConfig>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Decision>(CalloutTestBuilders.Granted()));
+        var harness = new ResponderHarness(new ResponderHarnessOptions { Pipeline = pipeline });
+
+        using var counters = new ResponderCounterListener();
+        await harness.RunOneAsync(CalloutTestBuilders.BuildRequestPayload());
+
+        Assert.Single(counters.Durations);
+        Assert.True(counters.Durations.Single() >= 0, "Recorded duration should be non-negative.");
+    }
+
+    [Fact]
+    public async Task RunAsync_RequestDuration_MeasuresElapsedTimeFromReceiveToReply()
+    {
+        // A controllable monotonic clock: the responder reads GetTimestamp() at receive and
+        // GetElapsedTime() after the reply, so advancing the clock by a known amount between
+        // those two reads makes the recorded latency deterministic.
+        var clock = new AdvanceableTimeProvider();
+        var pipeline = Substitute.For<IResolutionPipeline>();
+        pipeline.ResolveAsync(Arg.Any<AuthRequest>(), Arg.Any<ActiveConfig>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                clock.Advance(TimeSpan.FromMilliseconds(250));
+                return Task.FromResult<Decision>(CalloutTestBuilders.Granted());
+            });
+        var harness = new ResponderHarness(new ResponderHarnessOptions { Pipeline = pipeline, TimeProvider = clock });
+
+        using var counters = new ResponderCounterListener();
+        await harness.RunOneAsync(CalloutTestBuilders.BuildRequestPayload());
+
+        Assert.Equal(250, counters.Durations.Single(), precision: 3);
+    }
+
+    [Fact]
+    public async Task RunAsync_DroppedRequest_RecordsNoRequestDuration()
+    {
+        var harness = new ResponderHarness();
+
+        using var counters = new ResponderCounterListener();
+        await harness.RunOneAsync(Encoding.UTF8.GetBytes("not a valid nats jwt"));
+
+        Assert.Empty(counters.Durations);
     }
 
     // ---- constructor validation ----

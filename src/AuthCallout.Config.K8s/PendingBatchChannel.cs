@@ -53,7 +53,7 @@ internal sealed class PendingBatchChannel : IDisposable
     {
         try
         {
-            await _signal.WaitAsync(token).ConfigureAwait(false);
+            await _signal.WaitAsync(token);
         }
         catch (OperationCanceledException)
         {

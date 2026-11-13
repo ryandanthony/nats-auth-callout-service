@@ -93,7 +93,7 @@ public sealed class NatsFixture : IAsyncLifetime
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPath("/healthz").ForPort(MonitorPort)))
             .Build();
 
-        await _container.StartAsync().ConfigureAwait(false);
+        await _container.StartAsync();
     }
 
     /// <inheritdoc />
@@ -101,7 +101,7 @@ public sealed class NatsFixture : IAsyncLifetime
     {
         if (_container is not null)
         {
-            await _container.DisposeAsync().ConfigureAwait(false);
+            await _container.DisposeAsync();
         }
     }
 

@@ -49,7 +49,7 @@ public static class BootstrapFileMapper
 
     private static readonly HashSet<string> JwksFields = new(StringComparer.Ordinal)
     {
-        "refreshInterval", "fetchTimeout", "prewarmRequired",
+        "refreshInterval", "fetchTimeout", "prewarmRequired", "allowInsecureHttp",
     };
 
     private static readonly HashSet<string> ConcurrencyFields = new(StringComparer.Ordinal)
@@ -288,13 +288,14 @@ public static class BootstrapFileMapper
         var refreshInterval = RequireDuration(el, "refreshInterval", "jwks.refreshInterval", errors);
         var fetchTimeout = RequireDuration(el, "fetchTimeout", "jwks.fetchTimeout", errors);
         var prewarmRequired = RequireBool(el, "prewarmRequired", "jwks.prewarmRequired", errors);
+        var allowInsecureHttp = OptionalBool(el, "allowInsecureHttp", "jwks.allowInsecureHttp", errors);
 
         if (refreshInterval is null || fetchTimeout is null || prewarmRequired is null)
         {
             return null;
         }
 
-        return new JwksSettings(refreshInterval.Value, fetchTimeout.Value, prewarmRequired.Value);
+        return new JwksSettings(refreshInterval.Value, fetchTimeout.Value, prewarmRequired.Value, allowInsecureHttp ?? false);
     }
 
     private static ConcurrencySettings? MapConcurrency(JsonElement root, List<string> errors)
@@ -381,6 +382,22 @@ public static class BootstrapFileMapper
         if (!obj.TryGetProperty(propertyName, out var el) || (el.ValueKind != JsonValueKind.True && el.ValueKind != JsonValueKind.False))
         {
             errors.Add($"'{context}' is required and must be a boolean.");
+            return null;
+        }
+
+        return el.GetBoolean();
+    }
+
+    private static bool? OptionalBool(JsonElement obj, string propertyName, string context, List<string> errors)
+    {
+        if (!obj.TryGetProperty(propertyName, out var el))
+        {
+            return null;
+        }
+
+        if (el.ValueKind != JsonValueKind.True && el.ValueKind != JsonValueKind.False)
+        {
+            errors.Add($"'{context}' must be a boolean.");
             return null;
         }
 

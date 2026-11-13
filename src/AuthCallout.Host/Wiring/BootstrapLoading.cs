@@ -17,6 +17,11 @@ namespace AuthCallout.Host.Wiring;
 /// </summary>
 public static class BootstrapLoading
 {
+    /// <summary>Gets the startup warning written to standard error when <c>jwks.allowInsecureHttp</c> is enabled.</summary>
+    /// <value>The warning line.</value>
+    public static string InsecureHttpWarning =>
+        "WARN: JWKS HTTPS requirement disabled (jwks.allowInsecureHttp=true): discovery/JWKS documents may be fetched over plain http://. Dev/test only, do not use in production.";
+
     /// <summary>
     /// Loads the bootstrap file from <see cref="BootstrapConfigLoader.ResolvePath"/> and runs
     /// <see cref="ConfigValidator.ValidateBootstrap"/> over it. On any failure, writes a
@@ -30,7 +35,7 @@ public static class BootstrapLoading
         var mapResult = BootstrapConfigLoader.Load(bootstrapPath);
         if (!mapResult.Succeeded)
         {
-            await Console.Error.WriteLineAsync($"FATAL: bootstrap file '{bootstrapPath}' failed to load: {mapResult.Error}").ConfigureAwait(false);
+            await Console.Error.WriteLineAsync($"FATAL: bootstrap file '{bootstrapPath}' failed to load: {mapResult.Error}");
             return null;
         }
 
@@ -38,11 +43,16 @@ public static class BootstrapLoading
         var validation = ConfigValidator.ValidateBootstrap(bootstrap);
         if (validation.IsValid)
         {
+            if (bootstrap.Jwks.AllowInsecureHttp)
+            {
+                await Console.Error.WriteLineAsync(InsecureHttpWarning);
+            }
+
             return bootstrap;
         }
 
         var reason = string.Join("; ", validation.Errors.Select(static e => $"{e.Code}: {e.Message}"));
-        await Console.Error.WriteLineAsync($"FATAL: bootstrap file '{bootstrapPath}' is invalid: {reason}").ConfigureAwait(false);
+        await Console.Error.WriteLineAsync($"FATAL: bootstrap file '{bootstrapPath}' is invalid: {reason}");
         return null;
     }
 }

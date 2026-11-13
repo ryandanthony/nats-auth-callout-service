@@ -32,8 +32,16 @@ public readonly struct DurationString : IEquatable<DurationString>
     /// <value>The canonical text form.</value>
     public string Text { get; }
 
+    /// <summary>Compares two durations for equality.</summary>
+    /// <param name="left">The first duration.</param>
+    /// <param name="right">The second duration.</param>
+    /// <returns><see langword="true"/> when both durations are equal.</returns>
     public static bool operator ==(DurationString left, DurationString right) => left.Equals(right);
 
+    /// <summary>Compares two durations for inequality.</summary>
+    /// <param name="left">The first duration.</param>
+    /// <param name="right">The second duration.</param>
+    /// <returns><see langword="true"/> when the durations differ.</returns>
     public static bool operator !=(DurationString left, DurationString right) => !left.Equals(right);
 
     /// <summary>Constructs a <see cref="DurationString"/> directly from a <see cref="TimeSpan"/>, formatting canonical text.</summary>

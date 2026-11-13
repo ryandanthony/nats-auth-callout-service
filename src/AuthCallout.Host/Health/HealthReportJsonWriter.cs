@@ -55,7 +55,7 @@ public static class HealthReportJsonWriter
         }
 
         stream.Position = 0;
-        await stream.CopyToAsync(context.Response.Body, context.RequestAborted).ConfigureAwait(false);
+        await stream.CopyToAsync(context.Response.Body, context.RequestAborted);
     }
 
     private static void WriteEntry(Utf8JsonWriter writer, string name, HealthReportEntry entry)

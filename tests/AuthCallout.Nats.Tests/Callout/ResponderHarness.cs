@@ -39,7 +39,7 @@ internal sealed class ResponderHarness
 
         var dependencies = new CalloutResponderDependencies(
             effectivePipeline, effectiveActiveConfigSource, effectiveMinter, effectiveCrypto, effectiveIdentityStoreWriter, effectiveEventEmitter);
-        _responder = new CalloutResponder(dependencies, effectiveOptions, onDiagnostic: _diagnostics.Enqueue);
+        _responder = new CalloutResponder(dependencies, effectiveOptions, onDiagnostic: _diagnostics.Enqueue, timeProvider: effective.TimeProvider);
 
         _connection = effective.Connection ?? Substitute.For<INatsConnection>();
         if (effective.Connection is null)
@@ -66,7 +66,7 @@ internal sealed class ResponderHarness
     {
         var messages = BuildMessages(requests);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        await _responder.RunAsync(messages, cts.Token).ConfigureAwait(false);
+        await _responder.RunAsync(messages, cts.Token);
     }
 
     /// <summary>Waits briefly for fire-and-forget event-emission tasks (never awaited by the responder itself) to complete, for tests that assert on them.</summary>
@@ -139,7 +139,7 @@ internal sealed class ResponderHarness
             yield return new NatsMsg<byte[]>(CalloutResponder.Subject, "reply.inbox", request.Payload.Length, headers, request.Payload, _connection, NatsMsgFlags.None);
         }
 
-        await Task.CompletedTask.ConfigureAwait(false);
+        await Task.CompletedTask;
     }
 
     /// <summary>A fixed, never-changing <see cref="IActiveConfigSource"/> test double.</summary>

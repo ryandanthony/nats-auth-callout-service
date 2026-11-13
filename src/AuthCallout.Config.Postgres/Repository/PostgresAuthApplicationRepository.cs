@@ -45,19 +45,19 @@ public sealed class PostgresAuthApplicationRepository : IAuthApplicationReposito
     /// <returns>The filenames of migrations actually applied by this call.</returns>
     public async Task<IReadOnlyList<string>> MigrateAsync(CancellationToken cancellationToken)
     {
-        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        return await _migrationRunner.RunAsync(connection, cancellationToken).ConfigureAwait(false);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        return await _migrationRunner.RunAsync(connection, cancellationToken);
     }
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<AuthApplicationRow>> ListEnabledAsync(CancellationToken cancellationToken)
     {
-        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
 
         var command = new CommandDefinition(
             "SELECT name, spec, enabled FROM auth_applications WHERE enabled = true ORDER BY name;",
             cancellationToken: cancellationToken);
-        var rows = await connection.QueryAsync<RawRow>(command).ConfigureAwait(false);
+        var rows = await connection.QueryAsync<RawRow>(command);
 
         var result = new List<AuthApplicationRow>();
         foreach (var row in rows)
@@ -72,7 +72,7 @@ public sealed class PostgresAuthApplicationRepository : IAuthApplicationReposito
     /// <inheritdoc />
     public async IAsyncEnumerable<NotificationSignal> ListenForChangesAsync([EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
 
         // LISTEN's channel name cannot be a bind parameter (it is DDL-like session state, not
         // query data); _notifyChannel comes only from this service's own bootstrap config
@@ -82,7 +82,7 @@ public sealed class PostgresAuthApplicationRepository : IAuthApplicationReposito
         await using (var listenCommand = new NpgsqlCommand($"LISTEN {QuoteIdentifier(_notifyChannel)};", connection))
 #pragma warning restore CA2100
         {
-            await listenCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await listenCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
         // NpgsqlConnection.WaitAsync blocks until at least one notification arrives (firing
@@ -94,7 +94,7 @@ public sealed class PostgresAuthApplicationRepository : IAuthApplicationReposito
         {
             try
             {
-                await connection.WaitAsync(cancellationToken).ConfigureAwait(false);
+                await connection.WaitAsync(cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -108,7 +108,7 @@ public sealed class PostgresAuthApplicationRepository : IAuthApplicationReposito
     private async Task<NpgsqlConnection> OpenConnectionAsync(CancellationToken cancellationToken)
     {
         var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken);
         return connection;
     }
 

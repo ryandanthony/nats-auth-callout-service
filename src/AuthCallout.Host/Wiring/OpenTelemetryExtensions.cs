@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------
 
 using AuthCallout.Host.Observability;
+using AuthCallout.Nats.Callout;
 using AuthCallout.Nats.Events;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -39,10 +40,22 @@ public static class OpenTelemetryExtensions
             .ConfigureResource(resource => resource.AddService(serviceName: ResolveServiceName()))
             .WithMetrics(metrics => metrics
                 .AddMeter(HostMetrics.MeterName)
+                .AddMeter(CalloutResponderMetrics.MeterName)
                 .AddMeter(EventEmitterMetrics.MeterName)
+                // Explicit bucket boundaries for the callout request-duration histogram: the SDK
+                // default buckets are too coarse for this sub-ms-to-low-ms path (the whole
+                // distribution collapses into one low bucket with a 5s tail), so give the
+                // dashboard a latency-appropriate set (CalloutResponderMetrics owns the values).
+                .AddView(
+                    CalloutResponderMetrics.DurationHistogramName,
+                    new ExplicitBucketHistogramConfiguration
+                    {
+                        Boundaries = [.. CalloutResponderMetrics.DurationBucketBoundariesMilliseconds],
+                    })
                 .AddOtlpExporter())
             .WithTracing(tracing => tracing
                 .AddSource(HostActivitySource.Name)
+                .AddSource(CalloutActivitySource.Name)
                 .AddOtlpExporter());
 
         return services;

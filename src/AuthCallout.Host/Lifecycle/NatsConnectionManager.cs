@@ -67,7 +67,7 @@ public sealed class NatsConnectionManager : IAsyncDisposable
     /// <returns>A task that completes once the connection attempt finishes (success or the client's own retry policy takes over).</returns>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        await _connection.ConnectAsync().AsTask().WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _connection.ConnectAsync().AsTask().WaitAsync(cancellationToken);
     }
 
     /// <summary>
@@ -82,7 +82,7 @@ public sealed class NatsConnectionManager : IAsyncDisposable
         _connection.ConnectionDisconnected -= OnConnectionDisconnectedAsync;
         _connection.ReconnectFailed -= OnReconnectFailedAsync;
 
-        await _shutdownCts.CancelAsync().ConfigureAwait(false);
+        await _shutdownCts.CancelAsync();
 
         Task? responderTask;
         lock (_epochLock)
@@ -94,7 +94,7 @@ public sealed class NatsConnectionManager : IAsyncDisposable
         {
             try
             {
-                await responderTask.ConfigureAwait(false);
+                await responderTask;
             }
             catch (OperationCanceledException)
             {
@@ -102,7 +102,7 @@ public sealed class NatsConnectionManager : IAsyncDisposable
             }
         }
 
-        await _connection.DisposeAsync().ConfigureAwait(false);
+        await _connection.DisposeAsync();
         _shutdownCts.Dispose();
     }
 
@@ -135,7 +135,7 @@ public sealed class NatsConnectionManager : IAsyncDisposable
     {
         try
         {
-            await _responder.RunAsync(_connection, shutdownToken).ConfigureAwait(false);
+            await _responder.RunAsync(_connection, shutdownToken);
         }
         catch (OperationCanceledException)
         {

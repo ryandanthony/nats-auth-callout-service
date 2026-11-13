@@ -28,6 +28,10 @@ namespace AuthCallout.Nats.Callout;
 /// optional diagnostic callback and dropped without a reply (fail closed; the client
 /// experiences the ordinary callout timeout).
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Major Code Smell",
+    "S1200:Classes should not be coupled to too many other classes",
+    Justification = "The responder is the transport-edge orchestrator and sat exactly at the 30-type limit; per-request tracing (CalloutActivitySource) adds the only extra couplings, and splitting the orchestration just to satisfy the count would scatter one linear request flow.")]
 public sealed class CalloutResponder
 {
     /// <summary>The fixed NATS auth callout subject (doc 08).</summary>
@@ -48,6 +52,7 @@ public sealed class CalloutResponder
     private readonly CalloutResponderDependencies _dependencies;
     private readonly CalloutResponderOptions _options;
     private readonly Action<string>? _onDiagnostic;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>Initializes a new instance of the <see cref="CalloutResponder"/> class.</summary>
     /// <param name="dependencies">The collaborators this responder orchestrates per request.</param>
@@ -59,7 +64,18 @@ public sealed class CalloutResponder
     /// dropped. Never called with token, claim, or secret material. Callers (P13) may wire
     /// this to their logger.
     /// </param>
-    public CalloutResponder(CalloutResponderDependencies dependencies, CalloutResponderOptions options, Action<string>? onDiagnostic = null)
+    /// <param name="timeProvider">
+    /// The monotonic time source for the per-request duration metric
+    /// (<see cref="CalloutResponderMetrics.RequestDuration"/>), read via
+    /// <see cref="TimeProvider.GetTimestamp"/>/<see cref="TimeProvider.GetElapsedTime(long)"/>.
+    /// Defaults to <see cref="TimeProvider.System"/>; tests inject a fake to assert on the
+    /// recorded latency deterministically (mirrors <c>EventEmitter</c>'s own time source).
+    /// </param>
+    public CalloutResponder(
+        CalloutResponderDependencies dependencies,
+        CalloutResponderOptions options,
+        Action<string>? onDiagnostic = null,
+        TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(dependencies);
         dependencies.Validate();
@@ -69,6 +85,7 @@ public sealed class CalloutResponder
         _dependencies = dependencies;
         _options = options;
         _onDiagnostic = onDiagnostic;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>
@@ -106,35 +123,40 @@ public sealed class CalloutResponder
             MaxDegreeOfParallelism = _options.MaxDegreeOfParallelism,
             CancellationToken = cancellationToken,
         };
-        await Parallel.ForEachAsync(messages, parallelOptions, HandleAsync).ConfigureAwait(false);
+        await Parallel.ForEachAsync(messages, parallelOptions, HandleAsync);
     }
 
     private async ValueTask HandleAsync(NatsMsg<byte[]> msg, CancellationToken cancellationToken)
     {
+        // Monotonic start marker for the per-request duration metric: captured the moment the
+        // message is picked up, stopped right after the reply is sent (only replied requests
+        // are timed; a dropped request never replies, so its latency is meaningless).
+        var startTimestamp = _timeProvider.GetTimestamp();
+        using var requestSpan = CalloutActivitySource.StartRequest();
         using var requestCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         requestCts.CancelAfter(_options.PerRequestTimeout);
         var requestToken = requestCts.Token;
 
         try
         {
-            await ProcessAsync(msg, requestToken).ConfigureAwait(false);
+            await ProcessAsync(msg, startTimestamp, requestToken);
         }
         catch (OperationCanceledException) when (requestToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            _onDiagnostic?.Invoke("Auth request exceeded the per-request timeout; dropped without reply.");
+            Drop("Auth request exceeded the per-request timeout; dropped without reply.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _onDiagnostic?.Invoke($"Auth request processing failed unexpectedly ({ex.GetType().Name}); dropped without reply.");
+            Drop($"Auth request processing failed unexpectedly ({ex.GetType().Name}); dropped without reply.");
         }
     }
 
-    private async Task ProcessAsync(NatsMsg<byte[]> msg, CancellationToken cancellationToken)
+    private async Task ProcessAsync(NatsMsg<byte[]> msg, long startTimestamp, CancellationToken cancellationToken)
     {
         var envelope = CalloutXkeyEnvelope.Open(msg, _dependencies.Crypto);
         if (!envelope.Accepted)
         {
-            _onDiagnostic?.Invoke(envelope.RejectionReason ?? "Auth request rejected by the xkey envelope check.");
+            Drop(envelope.RejectionReason ?? "Auth request rejected by the xkey envelope check.");
             return;
         }
 
@@ -146,19 +168,57 @@ public sealed class CalloutResponder
         var activeConfig = _dependencies.ActiveConfigSource.Current;
         if (activeConfig is null)
         {
-            _onDiagnostic?.Invoke("No active config; dropped without reply.");
+            Drop("No active config; dropped without reply.");
             return;
         }
 
-        var decision = await _dependencies.Pipeline.ResolveAsync(request, activeConfig, cancellationToken).ConfigureAwait(false);
-        decision = await StoreIdentityIfNeededAsync(decision, request, cancellationToken).ConfigureAwait(false);
+        var decision = await CalloutActivitySource.TraceStageAsync(
+            "auth.resolve", () => _dependencies.Pipeline.ResolveAsync(request, activeConfig, cancellationToken));
+        decision = await CalloutActivitySource.TraceStageAsync(
+            "auth.identity_store", () => StoreIdentityIfNeededAsync(decision, request, cancellationToken));
+        await CalloutActivitySource.TraceStageAsync(
+            "auth.reply", () => ReplyAsync(msg, request, decision, envelope.ServerXkeyPublic, cancellationToken));
+        CalloutActivitySource.TagOutcome(decision is GrantedDecision);
 
-        await ReplyAsync(msg, request, decision, envelope.ServerXkeyPublic, cancellationToken).ConfigureAwait(false);
+        // The reply is out: record the success/failure metric for the callout method being
+        // invoked (a grant is a success, a denial a failure) and the receive-to-reply duration,
+        // strictly after the reply.
+        RecordDecision(decision, startTimestamp);
 
         // Fire-and-forget, strictly after the reply: IEventEmitter.EmitAsync is documented
         // never to throw (ADR 0008), so this is not awaited and never delays or risks the
         // reply that already went out.
         _ = _dependencies.EventEmitter.EmitAsync(decision, request.UserNKey, CancellationToken.None);
+    }
+
+    /// <summary>Counts a request that produced no reply (<see cref="CalloutResponderMetrics.Dropped"/>) and surfaces the value-free reason via the diagnostic callback.</summary>
+    private void Drop(string reason)
+    {
+        CalloutResponderMetrics.Dropped.Add(1);
+        _onDiagnostic?.Invoke(reason);
+    }
+
+    /// <summary>Records the grant/deny outcome metric and the receive-to-reply duration, strictly after the reply has been sent.</summary>
+    private void RecordDecision(Decision decision, long startTimestamp)
+    {
+        var elapsedMilliseconds = _timeProvider.GetElapsedTime(startTimestamp).TotalMilliseconds;
+        switch (decision)
+        {
+            case GrantedDecision:
+                {
+                    CalloutResponderMetrics.RecordGranted(elapsedMilliseconds);
+                    break;
+                }
+
+            case DeniedDecision:
+                {
+                    CalloutResponderMetrics.RecordDenied(elapsedMilliseconds);
+                    break;
+                }
+
+            default:
+                throw new InvalidOperationException("Unrecognized Decision subtype; expected GrantedDecision or DeniedDecision.");
+        }
     }
 
     private bool TryDecodeRequest(byte[] payload, out AuthRequest request)
@@ -170,7 +230,7 @@ public sealed class CalloutResponder
         }
         catch (Exception ex) when (ex is NatsJwtException or FormatException or ArgumentException)
         {
-            _onDiagnostic?.Invoke($"Malformed auth request ({ex.GetType().Name}); dropped without reply.");
+            Drop($"Malformed auth request ({ex.GetType().Name}); dropped without reply.");
             request = null!;
             return false;
         }
@@ -181,7 +241,7 @@ public sealed class CalloutResponder
         var response = MintResponse(decision, request);
         var responseBytes = Encoding.UTF8.GetBytes(response.EncodedResponseJwt);
         responseBytes = CalloutXkeyEnvelope.Seal(responseBytes, serverXkeyPublic, _dependencies.Crypto);
-        await msg.ReplyAsync(responseBytes, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await msg.ReplyAsync(responseBytes, cancellationToken: cancellationToken);
     }
 
     private SignedAuthResponse MintResponse(Decision decision, AuthRequest request) => decision switch
@@ -207,7 +267,7 @@ public sealed class CalloutResponder
             return DenyForStoreFailure(granted);
         }
 
-        var writeResult = await _dependencies.IdentityStoreWriter.WriteAsync(granted, request.RawToken, cancellationToken).ConfigureAwait(false);
+        var writeResult = await _dependencies.IdentityStoreWriter.WriteAsync(granted, request.RawToken, cancellationToken);
         if (writeResult.Succeeded)
         {
             return decision;

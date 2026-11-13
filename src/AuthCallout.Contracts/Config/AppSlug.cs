@@ -4,6 +4,7 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using System.Security.Cryptography;
 using System.Text;
 
 namespace AuthCallout.Contracts.Config;
@@ -41,8 +42,16 @@ public readonly struct AppSlug : IEquatable<AppSlug>
     /// <value>The slug text.</value>
     public string Value { get; }
 
+    /// <summary>Compares two slugs for ordinal equality.</summary>
+    /// <param name="left">The first slug.</param>
+    /// <param name="right">The second slug.</param>
+    /// <returns><see langword="true"/> when both slugs have the same value.</returns>
     public static bool operator ==(AppSlug left, AppSlug right) => left.Equals(right);
 
+    /// <summary>Compares two slugs for ordinal inequality.</summary>
+    /// <param name="left">The first slug.</param>
+    /// <param name="right">The second slug.</param>
+    /// <returns><see langword="true"/> when the slugs differ.</returns>
     public static bool operator !=(AppSlug left, AppSlug right) => !left.Equals(right);
 
     /// <summary>
@@ -155,12 +164,12 @@ public readonly struct AppSlug : IEquatable<AppSlug>
     public string OidcTokensReadSubject => $"$KV.{OidcTokensBucket}.>";
 
     /// <summary>The physical <c>$KV.</c> subject for a single assertion self-lookup entry (ADR 0013 §Grant subjects), keyed by the client's own <c>jti</c> (or <c>sub</c> fallback, doc 07).</summary>
-    /// <param name="jtiOrSubjectFallback">The client's own <c>jti</c> (or <c>sub</c> fallback). Sanitized via <see cref="SanitizeKeySegment"/> before use, since <c>jti</c> comes from the token and must be key-safe (ADR 0013).</param>
+    /// <param name="jtiOrSubjectFallback">The client's own <c>jti</c> (or <c>sub</c> fallback). Derived via <see cref="DeriveKeySegment"/> before use, since <c>jti</c> comes from the token and must be both key-safe and collision-free (ADR 0013).</param>
     /// <returns>The physical self-lookup subject for that key.</returns>
     public string AssertionSelfLookupSubject(string jtiOrSubjectFallback)
     {
         ArgumentException.ThrowIfNullOrEmpty(jtiOrSubjectFallback);
-        return $"$KV.{AssertionsBucket}.{SanitizeKeySegment(jtiOrSubjectFallback)}";
+        return $"$KV.{AssertionsBucket}.{DeriveKeySegment(jtiOrSubjectFallback)}";
     }
 
     /// <summary>
@@ -207,6 +216,31 @@ public readonly struct AppSlug : IEquatable<AppSlug>
     private static bool IsKeySafe(char lower) =>
         lower is >= 'a' and <= 'z' or >= '0' and <= '9' || lower == '-';
 
+    /// <summary>The number of leading hex characters of the SHA-256 digest appended by <see cref="DeriveKeySegment"/>.</summary>
+    private const int KeyDigestLength = 16;
+
+    /// <summary>
+    /// The single source of truth for deriving a <b>collision-free</b>, key-safe segment from
+    /// a dynamic, token-supplied value (<c>jti</c>, <c>sub</c>): <see cref="SanitizeKeySegment"/>
+    /// of the raw value, plus an <c>_</c>-joined 16-hex-character SHA-256 digest of the raw
+    /// value's UTF-8 bytes. The sanitized half keeps the segment operator-readable; the digest
+    /// half makes distinct raw values yield distinct segments even when sanitization would
+    /// collide them (e.g. <c>User.A</c> vs <c>user_a</c> vs <c>USER A</c>), so one principal's
+    /// granted subject or written key can never alias another's. Both the granted self-lookup
+    /// subject (<see cref="AssertionSelfLookupSubject"/>), the identity-store write key, the
+    /// scoped client-inbox grant (<see cref="ClientInboxSubscribeSubject"/>), and client-side
+    /// consumers derive segments through this one method.
+    /// </summary>
+    /// <param name="segment">The raw dynamic key segment (e.g. a token <c>jti</c> or <c>sub</c>).</param>
+    /// <returns>The collision-free, key-safe segment.</returns>
+    /// <exception cref="ArgumentException"><paramref name="segment"/> is null or empty.</exception>
+    public static string DeriveKeySegment(string segment)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(segment);
+        var digest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(segment)))[..KeyDigestLength];
+        return $"{SanitizeKeySegment(segment)}_{digest}";
+    }
+
     /// <summary>Gets the physical <c>$KV.</c> subject granting read of the whole assertion-keys bucket (ADR 0013 §Grant subjects), added to every authenticated grant.</summary>
     /// <value>The physical assertion-keys read subject.</value>
     public static string AssertionKeysReadSubject => $"$KV.{AssertionKeysBucket}.>";
@@ -216,15 +250,41 @@ public readonly struct AppSlug : IEquatable<AppSlug>
     public string DiscoveryReadSubject => $"$KV.{DiscoveryBucket}.{DiscoveryDescriptorKey}";
 
     /// <summary>
-    /// Gets the subscribe subject a client's NATS request-reply inbox needs so a JetStream KV
-    /// client (<c>NatsKVContext</c>) can receive the replies to its stream-info / direct-get
-    /// requests. NATS.NET assigns each connection a random <c>_INBOX.&lt;nuid&gt;</c> prefix the
-    /// callout cannot predict, so the wildcard inbox is the minimal grant that still works;
-    /// added once to any grant that reads at least one KV bucket. Not part of ADR 0013's
-    /// logical <c>$KV.*</c> contract — it is the wire-level plumbing a real KV read requires.
+    /// The subscribe subject granting this connection's <b>own, scoped</b> NATS request-reply
+    /// inbox: <c>_INBOX.{slug}.{derived-principal-key}.&gt;</c>. A JetStream KV client
+    /// (<c>NatsKVContext</c>) receives stream-info / direct-get replies on its connection
+    /// inbox, so any grant that reads at least one KV bucket needs an inbox subscribe — but
+    /// granting the account-wide <c>_INBOX.&gt;</c> wildcard would let every authenticated
+    /// client read every other client's request replies in the account. Instead the grant is
+    /// scoped to a prefix derived from the application slug and the connection's principal
+    /// (<c>sub</c>, falling back to <c>azp</c>, then the minted name), and the client must
+    /// configure the matching custom inbox prefix (<c>NatsOpts.InboxPrefix</c> in NATS.NET,
+    /// <c>custom_inbox_prefix</c> in other clients): <c>_INBOX.{slug}.{DeriveKeySegment(principal)}</c>.
+    /// Connections sharing a principal share a prefix (same identity); everyone else's inbox
+    /// is out of reach.
     /// </summary>
-    /// <value>The client inbox subscribe subject.</value>
-    public static string ClientInboxSubscribeSubject => "_INBOX.>";
+    /// <param name="principalKey">The connection's principal identifier (<c>sub</c>/<c>azp</c>-style, or the minted name as a last resort).</param>
+    /// <returns>The scoped client inbox subscribe subject.</returns>
+    /// <exception cref="ArgumentException"><paramref name="principalKey"/> is null or empty.</exception>
+    public string ClientInboxSubscribeSubject(string principalKey)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(principalKey);
+        return $"{ClientInboxPrefix(principalKey)}.>";
+    }
+
+    /// <summary>
+    /// The custom inbox prefix a client must set (<c>NatsOpts.InboxPrefix</c> /
+    /// <c>custom_inbox_prefix</c>) so its request-reply inboxes land inside the subjects
+    /// <see cref="ClientInboxSubscribeSubject"/> grants it: <c>_INBOX.{slug}.{DeriveKeySegment(principal)}</c>.
+    /// </summary>
+    /// <param name="principalKey">The connection's principal identifier, matching what the callout granted.</param>
+    /// <returns>The inbox prefix to configure on the client connection.</returns>
+    /// <exception cref="ArgumentException"><paramref name="principalKey"/> is null or empty.</exception>
+    public string ClientInboxPrefix(string principalKey)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(principalKey);
+        return $"_INBOX.{Value}.{DeriveKeySegment(principalKey)}";
+    }
 
     /// <summary>
     /// The JetStream API subjects a KV client must be able to <b>publish</b> to in order to

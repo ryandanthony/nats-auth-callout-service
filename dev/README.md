@@ -1,20 +1,36 @@
 # `dev/` — Aspire dev loops and sample services
 
 Two [.NET Aspire](https://aspire.dev) AppHosts give a full local loop for
-`nats-auth-callout-service` without hand-written compose files, and two tiny
-sample services (`NoteService`, `TaskService`) exercise both config sources
-and both connection styles (doc 08 §Local development, doc 06 for the
-sequence they demonstrate).
+`nats-auth-callout-service` without hand-written compose files, and two sample
+services (`NoteService`, `TaskService`) exercise both config sources and the
+full identity-propagation sequence (doc 08 §Local development, doc 06).
+
+The samples are built on [Wolverine](https://wolverinefx.net) over NATS: each
+is an independent application with a small domain (commands, queries, and
+events) backed by an in-memory store, and an in-process demo client that
+drives traffic. Every client-originated command/query carries the connection's
+signed `Callout-Identity` assertion, and a reusable Wolverine middleware
+(`CalloutIdentityMiddleware`, in `Shared`) verifies it on the service side
+before any handler runs — so the service authenticates every caller per
+message, on top of the callout authenticating the NATS connection.
 
 ```
 dev/
   AppHost.Local/   files source + external NATS + Keycloak (day-to-day inner loop)
   AppHost.K8s/      CRD source + local K3s cluster + NATS + Keycloak (cluster loop)
   samples/
-    NoteService/    connects with an OIDC token, notes.>, identity propagation enabled
-    TaskService/    second independent app, tasks.>, autoAddSessionAccess service profile
-    Shared/         SampleSupport: OIDC token fetch, callout discovery, assertion verify
+    NoteService/    Wolverine app: Note domain (create/rename/get/list + events), notes.>
+    TaskService/    second independent Wolverine app: TaskItem domain, tasks.>
+    Shared/         SampleSupport: OIDC token fetch, callout connection/discovery,
+                    identity middleware + verifier, assertion verify
 ```
+
+**Subjects & grants.** Each app uses `{app}.commands` / `{app}.queries` /
+`{app}.events` plus Wolverine's fixed `wolverine.response` reply subject; the
+app YAML grant is widened to `[{app}.>, wolverine.response]` (the callout still
+auto-adds the KV/JetStream/scoped-inbox plumbing). `wolverine.response` is
+scoped inside each app's own NATS account, so app isolation (ADR 0001) holds:
+a `notes` token never yields `tasks.>` and vice versa.
 
 ## Prerequisites
 
@@ -31,7 +47,7 @@ dev/
   `RequireHttps` on unconditionally — including here in dev — because P06/P08
   never relax it for a "trusted" issuer. If Keycloak ends up serving plain
   HTTP (no cert trusted), JWKS prewarm fails and the callout never leaves
-  `Starting` state. If port `8081` (`AppHost.Local`) or `8082`
+  `Starting` state. If port `8083` (`AppHost.Local`) or `8082`
   (`AppHost.K8s`) is already bound by something else on your machine, stop
   that first — Keycloak's container will still start, but the AppHost's own
   DCP tunnel proxy silently can't forward the host port and everything hangs
@@ -45,8 +61,18 @@ dev/
 dotnet run --project dev/AppHost.Local
 ```
 
+The repo's `justfile` wraps this: `just run-aspire-local` (default
+`docker` mode, builds and runs the shipped Dockerfile image via
+`AddDockerfile`, needing `NUGET_GITHUB_TOKEN` or a `gh auth token` fallback
+to restore `FestinaLente.CodeStandards`), `just run-aspire-local local`
+(runs `AuthCallout.Host` from the working tree instead), `just
+run-aspire-local-release` (same, AppHost and samples in Release), and
+`just reset-aspire-local [local|docker]` (stop, rebuild, restart). `just
+bench` runs the callout's real-NATS latency benchmark/regression gate
+(p50 ≤ 25ms, p99 ≤ 50ms) against a Testcontainers NATS instance.
+
 Starts, in order: NATS (JetStream, external port `4222`), Keycloak (dev
-realm import from `AppHost.Local/realm/dev-realm.json`, host port `8081`),
+realm import from `AppHost.Local/realm/dev-realm.json`, host port `8083`),
 `AuthCallout.Host` (files source, `Source__Kind` implied by
 `config/bootstrap.yaml`, config directory `AppHost.Local/config/apps/`), then
 `NoteService` and `TaskService`.
@@ -67,15 +93,19 @@ realm import from `AppHost.Local/realm/dev-realm.json`, host port `8081`),
 - The dashboard's **Traces** view shows auth spans from the callout as
   `note`/`task` connect and get authorized.
 - `note`'s and `task`'s console logs (dashboard → resource → **Console
-  logs**) show: `connected and authorized`, `discovery: identityPropagation.
-  enabled=True`, `fetched own signed identity assertion`, and the subscriber
-  loop resolving the publisher's original OIDC claim via the token-store
-  bucket (`autoAddSessionAccess`) — the full doc 06 propagation sequence.
-  **Verified live** (2026-09-10): both samples run to completion end to end
-  — connect, discover, fetch their own assertion, publish with
-  `Callout-Identity`, and the subscriber verifies the signature and resolves
-  `preferred_username` from the caller's stored OIDC token — with zero NATS
-  permission violations and all three health endpoints `Healthy`.
+  logs**) show the Wolverine app starting, the demo client sending its
+  commands/queries with a `Callout-Identity` header, and
+  `CalloutIdentityMiddleware` logging `Verified caller identity for {message}:
+  sub=note-user` (or `task-user`) before each handler runs — followed by the
+  handler lines (`created note ...`, cascaded `event NoteCreated ...`, and the
+  client's `ListNotes -> N note(s)` query result). A message that ever arrived
+  without a valid assertion would log `Rejecting {message}: ...` and never
+  reach a handler.
+
+  The middleware's message-gating logic (reject without identity, run with a
+  verified caller whose `sub` becomes the owner, query round-trip) is also
+  covered directly against the compiled sample assemblies via Wolverine's
+  in-memory transport, so it can be checked without NATS/Keycloak.
 
 **Hot-reload check:** with the loop running, edit
 `dev/AppHost.Local/config/apps/Note.yaml` (e.g. add a role to `match`) and
@@ -164,10 +194,10 @@ jsonpath='{.status}'` shows the status write-back (`observedGeneration`,
 Both samples fetch their own token via the Resource Owner Password grant
 (`DevOidcTokenFetcher`, dev-only — a real client would use a browser
 redirect flow). To do the same from a shell against either loop's Keycloak
-(swap the port: `8081` for `AppHost.Local`, `8082` for `AppHost.K8s`):
+(swap the port: `8083` for `AppHost.Local`, `8082` for `AppHost.K8s`):
 
 ```
-curl -sk https://localhost:8081/realms/dev/protocol/openid-connect/token \
+curl -sk https://localhost:8083/realms/dev/protocol/openid-connect/token \
   -d grant_type=password \
   -d client_id=notes-web \
   -d username=note-user \

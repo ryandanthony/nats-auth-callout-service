@@ -27,7 +27,7 @@ internal sealed class JwksOnlyConfigurationRetriever : IConfigurationRetriever<O
     {
         ArgumentNullException.ThrowIfNull(retriever);
 
-        var json = await retriever.GetDocumentAsync(address, cancel).ConfigureAwait(false);
+        var json = await retriever.GetDocumentAsync(address, cancel);
         var jwks = new JsonWebKeySet(json);
         var configuration = new OpenIdConnectConfiguration { JsonWebKeySet = jwks };
         foreach (var key in jwks.GetSigningKeys())

@@ -94,7 +94,7 @@ public sealed class PostgresRoutingConfigProvider : IRoutingConfigProvider
         }
 
         _disposed = true;
-        await _disposalCts.CancelAsync().ConfigureAwait(false);
+        await _disposalCts.CancelAsync();
         _disposalCts.Dispose();
     }
 
@@ -114,13 +114,13 @@ public sealed class PostgresRoutingConfigProvider : IRoutingConfigProvider
         {
             while (true)
             {
-                var signalled = await pollTrigger.WaitAsync(token).ConfigureAwait(false);
+                var signalled = await pollTrigger.WaitAsync(token);
                 if (!signalled)
                 {
                     yield break;
                 }
 
-                var batch = await TryPollAsync(token).ConfigureAwait(false);
+                var batch = await TryPollAsync(token);
                 if (batch is not null)
                 {
                     yield return batch;
@@ -129,7 +129,7 @@ public sealed class PostgresRoutingConfigProvider : IRoutingConfigProvider
         }
         finally
         {
-            await StopListenBridgeAsync(listenTask).ConfigureAwait(false);
+            await StopListenBridgeAsync(listenTask);
         }
     }
 
@@ -143,7 +143,7 @@ public sealed class PostgresRoutingConfigProvider : IRoutingConfigProvider
     {
         try
         {
-            await foreach (var signal in _repository.ListenForChangesAsync(token).ConfigureAwait(false))
+            await foreach (var signal in _repository.ListenForChangesAsync(token))
             {
                 _ = signal;
                 pollTrigger.SignalImmediately();
@@ -165,7 +165,7 @@ public sealed class PostgresRoutingConfigProvider : IRoutingConfigProvider
         IReadOnlyList<Repository.AuthApplicationRow> rows;
         try
         {
-            rows = await _repository.ListEnabledAsync(token).ConfigureAwait(false);
+            rows = await _repository.ListEnabledAsync(token);
         }
         catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException)
         {
@@ -189,7 +189,7 @@ public sealed class PostgresRoutingConfigProvider : IRoutingConfigProvider
         try
         {
 #pragma warning disable VSTHRD003 // listenTask was already started by this instance before being passed here; awaiting it is the intended join point.
-            await listenTask.ConfigureAwait(false);
+            await listenTask;
 #pragma warning restore VSTHRD003
         }
         catch (OperationCanceledException)

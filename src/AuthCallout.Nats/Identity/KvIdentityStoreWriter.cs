@@ -34,6 +34,7 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
     private readonly BucketProvisioner _bucketProvisioner;
     private readonly KeysPublisher _keysPublisher;
     private readonly DiscoveryPublisher _discoveryPublisher;
+    private readonly KvStoreCache _stores;
 
     /// <summary>Initializes a new instance of the <see cref="KvIdentityStoreWriter"/> class.</summary>
     /// <param name="kvContext">The KV context every store/publish operation runs against (the callout's own connection).</param>
@@ -59,11 +60,46 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
         _bucketProvisioner = new BucketProvisioner(kvContext, onOrphanedBucket);
         _keysPublisher = new KeysPublisher(kvContext);
         _discoveryPublisher = new DiscoveryPublisher(kvContext);
+        _stores = new KvStoreCache(kvContext);
     }
 
     /// <inheritdoc />
-    public Task ProvisionBucketsAsync(RoutingConfig routing, CancellationToken cancellationToken) =>
-        _bucketProvisioner.ProvisionAsync(routing, cancellationToken);
+    public async Task ProvisionBucketsAsync(RoutingConfig routing, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(routing);
+
+        await _bucketProvisioner.ProvisionAsync(routing, cancellationToken);
+        _stores.Clear();
+
+        // Prewarm the token-store handle cache for every propagation-enabled application
+        // (mirrors AuthCalloutHostedService's JWKS prewarm, doc 08). Without this, the very
+        // first WriteAsync after any provision - including every fresh replica's first-ever
+        // request - pays KvStoreCache's uncached $JS.API.STREAM.INFO round trip inline on the
+        // auth hot path (observed as a callout_request_duration_ms outlier, ~300ms locally).
+        // Best-effort: a prewarm failure must not stop this method from returning (the caller,
+        // ConfigApplyLoopFactory.OnAppliedAsync, calls PublishKeysAndDiscoveryAsync right after
+        // - that must still run even if a KV lookup here fails), and WriteAsync's own cache
+        // miss on the next real request simply repeats the same lookup, so nothing is lost by
+        // swallowing it here.
+        var prewarmTasks = routing.Applications
+            .Where(static app => app.EffectiveIdentityPropagation.Enabled)
+            .Select(app => PrewarmTokenStoreAsync(app.Slug.OidcTokensBucket, cancellationToken));
+        await Task.WhenAll(prewarmTasks);
+    }
+
+    private async Task PrewarmTokenStoreAsync(string oidcTokensBucket, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _stores.GetAsync(oidcTokensBucket, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Swallowed: see the ProvisionBucketsAsync comment above this call. The bucket was
+            // just created/updated by _bucketProvisioner above, so a lookup failure here means
+            // a transient KV/connection issue, not a missing bucket.
+        }
+    }
 
     /// <inheritdoc />
     public async Task<IdentityStoreWriteResult> WriteAsync(GrantedDecision grant, string rawOidcToken, CancellationToken cancellationToken)
@@ -95,16 +131,15 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
         {
             var slug = AppSlug.From(grant.Application!);
             var connectionId = ConnectionIdGenerator.NewId();
-
-            var tokenStore = await _kvContext.GetStoreAsync(slug.OidcTokensBucket, cancellationToken).ConfigureAwait(false);
-            await tokenStore.CreateAsync(connectionId, rawOidcToken, ttl, cancellationToken: cancellationToken).ConfigureAwait(false);
-
             var claims = new AssertionClaims(connectionId, grant.Principal!, slug.Value, grant.Issuer!, grant.Expiry);
             var signed = _assertionSigner.Sign(claims);
+            var tokenStore = await _stores.GetAsync(slug.OidcTokensBucket, cancellationToken);
+            var assertionKey = AppSlug.DeriveKeySegment(grant.SelfLookupKey);
 
-            var assertionStore = await _kvContext.GetStoreAsync(slug.AssertionsBucket, cancellationToken).ConfigureAwait(false);
-            var assertionKey = AppSlug.SanitizeKeySegment(grant.SelfLookupKey);
-            await CreateOrReplaceAsync(assertionStore, assertionKey, signed.CompactJwt, ttl, cancellationToken).ConfigureAwait(false);
+            await IdentityRecordWriter.WriteBothAsync(
+                _kvContext.JetStreamContext,
+                new IdentityRecordWrite(tokenStore, connectionId, rawOidcToken, slug.AssertionsBucket, assertionKey, signed.CompactJwt, ttl),
+                cancellationToken);
 
             return new IdentityStoreWriteResult(Succeeded: true, ConnectionId: connectionId);
         }
@@ -122,31 +157,10 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
     {
         ArgumentNullException.ThrowIfNull(config);
 
-        var resolvedKeys = await AssertionKeyResolver.ResolveAsync(config.Bootstrap.AssertionKeys, _secretResolver, cancellationToken).ConfigureAwait(false);
-        await _keysPublisher.PublishAsync(resolvedKeys, cancellationToken).ConfigureAwait(false);
+        var resolvedKeys = await AssertionKeyResolver.ResolveAsync(config.Bootstrap.AssertionKeys, _secretResolver, cancellationToken);
+        await _keysPublisher.PublishAsync(resolvedKeys, cancellationToken);
 
         var currentKid = resolvedKeys.FirstOrDefault(static k => k.Active)?.Kid;
-        await _discoveryPublisher.PublishAsync(config.Routing, currentKid, cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task CreateOrReplaceAsync(INatsKVStore store, string key, string value, TimeSpan ttl, CancellationToken cancellationToken)
-    {
-        var result = await store.TryCreateAsync(key, value, ttl, cancellationToken: cancellationToken).ConfigureAwait(false);
-        if (result.Success)
-        {
-            return;
-        }
-
-        if (result.Error is not NatsKVCreateException)
-        {
-            throw result.Error;
-        }
-
-        // The self-lookup key can collide on the sub-fallback path (doc 07: jti is unique
-        // per token, but a reconnecting client's sub is stable), unlike the always-fresh
-        // generated connection id above. Replace rather than leave a stale assertion for a
-        // superseded connection readable under the same key.
-        await store.PurgeAsync(key, cancellationToken: cancellationToken).ConfigureAwait(false);
-        await store.CreateAsync(key, value, ttl, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await _discoveryPublisher.PublishAsync(config.Routing, currentKid, cancellationToken);
     }
 }

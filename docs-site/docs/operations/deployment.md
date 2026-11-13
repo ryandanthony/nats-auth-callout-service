@@ -98,9 +98,10 @@ see [`deploy/helm/nats-auth-callout-service`](https://github.com/ryandanthony/na
 ## Container image
 
 Multi-arch (`linux/amd64`, `linux/arm64`) images are built on
-`mcr.microsoft.com/dotnet/runtime` (framework-dependent, trimmed
-self-contained — no ASP.NET/MVC base needed) and published to GHCR on every
-tagged release:
+`mcr.microsoft.com/dotnet/runtime` (self-contained, ReadyToRun, **not**
+trimmed — no ASP.NET/MVC base needed; trimming was tried and reverted
+because several transitive dependencies rely on reflection the trim
+analyzer can't verify) and published to GHCR on every tagged release:
 
 ```bash
 docker pull ghcr.io/ryandanthony/nats-auth-callout-service:latest

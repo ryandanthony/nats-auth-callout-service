@@ -30,9 +30,9 @@ public sealed class JwksCacheManager : IJwksCacheManager, IJwksKeyProvider, IDis
 
     /// <summary>Initializes a new instance of the <see cref="JwksCacheManager"/> class.</summary>
     /// <param name="activeConfigSource">The active config source to track the issuer set from.</param>
-    /// <param name="settings">Bootstrap JWKS cache manager settings (default refresh interval, fetch timeout).</param>
+    /// <param name="settings">Bootstrap JWKS cache manager settings (default refresh interval, fetch timeout, and <see cref="JwksSettings.AllowInsecureHttp"/>).</param>
     public JwksCacheManager(IActiveConfigSource activeConfigSource, JwksSettings settings)
-        : this(activeConfigSource, settings, new IssuerConfigurationManagerFactory())
+        : this(activeConfigSource, settings, new IssuerConfigurationManagerFactory(settings?.AllowInsecureHttp ?? false))
     {
     }
 
@@ -65,7 +65,7 @@ public sealed class JwksCacheManager : IJwksCacheManager, IJwksKeyProvider, IDis
 
         var tracked = _issuers.Values.ToArray();
         var refreshTasks = tracked.Select(t => t.State.RefreshAsync(cancellationToken));
-        await Task.WhenAll(refreshTasks).ConfigureAwait(false);
+        await Task.WhenAll(refreshTasks);
 
         foreach (var t in tracked)
         {
@@ -202,9 +202,9 @@ public sealed class JwksCacheManager : IJwksCacheManager, IJwksKeyProvider, IDis
         {
             try
             {
-                while (await _timer.WaitForNextTickAsync(_cts.Token).ConfigureAwait(false))
+                while (await _timer.WaitForNextTickAsync(_cts.Token))
                 {
-                    await State.RefreshAsync(_cts.Token).ConfigureAwait(false);
+                    await State.RefreshAsync(_cts.Token);
                 }
             }
             catch (OperationCanceledException)

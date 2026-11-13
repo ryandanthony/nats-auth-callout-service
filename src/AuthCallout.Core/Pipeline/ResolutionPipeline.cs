@@ -66,11 +66,12 @@ public sealed class ResolutionPipeline : IResolutionPipeline
         }
 
         // Stage 2 (doc 03, ADR 0016): validate once against the shared issuer JWKS. All
-        // candidates share one issuer.Authority (RoutingConfig.IssuerIndex is keyed by it),
-        // so any candidate's IssuerConfig carries the same validation parameters; the first
-        // is used to select them.
+        // candidates share one issuer.Authority (RoutingConfig.IssuerIndex is keyed by it)
+        // and identical issuer blocks — the aggregate validator's divergent-issuer-config
+        // rule rejects any config where candidates on one authority differ — so the first
+        // candidate's IssuerConfig is safe to use for the shared validation parameters.
         var issuerConfig = candidates[0].Issuer;
-        var validation = await _tokenValidator.ValidateAsync(rawToken, issuerConfig, cancellationToken).ConfigureAwait(false);
+        var validation = await _tokenValidator.ValidateAsync(rawToken, issuerConfig, cancellationToken);
         if (!validation.IsValid)
         {
             return Deny(null, null, unvalidatedIssuer, validation.Reason!.Value);

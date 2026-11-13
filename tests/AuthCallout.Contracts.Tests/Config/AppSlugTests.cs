@@ -124,7 +124,7 @@ public sealed class AppSlugTests
         var slug = AppSlug.From("notes");
 
         Assert.Equal("$KV.callout_apps_notes_oidc_tokens.>", slug.OidcTokensReadSubject);
-        Assert.Equal("$KV.callout_apps_notes_assertions.abc123", slug.AssertionSelfLookupSubject("abc123"));
+        Assert.Equal($"$KV.callout_apps_notes_assertions.{AppSlug.DeriveKeySegment("abc123")}", slug.AssertionSelfLookupSubject("abc123"));
         Assert.Equal("$KV.callout_assertion_keys.>", AppSlug.AssertionKeysReadSubject);
         Assert.Equal("$KV.callout_apps_notes_discovery.descriptor", slug.DiscoveryReadSubject);
     }
@@ -169,10 +169,61 @@ public sealed class AppSlugTests
     }
 
     [Fact]
-    public void ClientInboxSubscribeSubject_IsWildcardInbox()
+    public void ClientInboxSubscribeSubject_IsScopedToSlugAndPrincipal()
     {
-        // NATS.NET assigns each connection an unpredictable _INBOX.<nuid> prefix, so the
-        // wildcard inbox is the minimal grant that lets a KV client receive its request replies.
-        Assert.Equal("_INBOX.>", AppSlug.ClientInboxSubscribeSubject);
+        // Never the account-wide _INBOX.> (which would let any authenticated client read
+        // every other client's request replies): scoped to the app slug + derived principal.
+        var slug = AppSlug.From("notes");
+
+        var subject = slug.ClientInboxSubscribeSubject("user-1");
+
+        Assert.StartsWith("_INBOX.notes.user-1_", subject, StringComparison.Ordinal);
+        Assert.EndsWith(".>", subject, StringComparison.Ordinal);
+        Assert.NotEqual("_INBOX.>", subject);
+    }
+
+    [Fact]
+    public void ClientInboxPrefix_MatchesGrantedSubjectMinusWildcard()
+    {
+        var slug = AppSlug.From("notes");
+
+        var prefix = slug.ClientInboxPrefix("user-1");
+
+        Assert.Equal($"{prefix}.>", slug.ClientInboxSubscribeSubject("user-1"));
+    }
+
+    [Fact]
+    public void DeriveKeySegment_IsCollisionFreeAcrossSanitizationAliases()
+    {
+        // SanitizeKeySegment alone maps these three distinct principals to the same
+        // 'user_a' segment; the derived form must keep them distinct (assertion
+        // takeover/impersonation guard).
+        var a = AppSlug.DeriveKeySegment("User.A");
+        var b = AppSlug.DeriveKeySegment("user_a");
+        var c = AppSlug.DeriveKeySegment("USER A");
+
+        Assert.NotEqual(a, b);
+        Assert.NotEqual(a, c);
+        Assert.NotEqual(b, c);
+    }
+
+    [Fact]
+    public void DeriveKeySegment_IsDeterministicAndKeySafe()
+    {
+        var derived = AppSlug.DeriveKeySegment("JTI.With Spaces");
+
+        Assert.Equal(derived, AppSlug.DeriveKeySegment("JTI.With Spaces"));
+        Assert.StartsWith("jti_with_spaces_", derived, StringComparison.Ordinal);
+        Assert.Matches("^[a-z0-9_-]+$", derived);
+    }
+
+    [Fact]
+    public void AssertionSelfLookupSubject_UsesDerivedKeySegment()
+    {
+        var slug = AppSlug.From("notes");
+
+        Assert.Equal(
+            $"$KV.callout_apps_notes_assertions.{AppSlug.DeriveKeySegment("abc123")}",
+            slug.AssertionSelfLookupSubject("abc123"));
     }
 }

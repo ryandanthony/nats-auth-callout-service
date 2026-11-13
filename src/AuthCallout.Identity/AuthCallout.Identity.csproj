@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <Description>Identity primitives for nats-auth-callout-service: verify the signed Callout-Identity assertion (AssertionSigner.Verify), plus the OIDC token validator and JWKS cache the service uses.</Description>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />

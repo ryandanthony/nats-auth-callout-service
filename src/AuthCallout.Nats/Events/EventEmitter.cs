@@ -24,8 +24,6 @@ namespace AuthCallout.Nats.Events;
 /// </summary>
 public sealed class EventEmitter : IEventEmitter
 {
-    private static readonly JsonSerializerOptions SerializerOptions = BuildSerializerOptions();
-
     private readonly INatsConnection _connection;
     private readonly IActiveConfigSource _activeConfigSource;
     private readonly TimeProvider _timeProvider;
@@ -76,11 +74,11 @@ public sealed class EventEmitter : IEventEmitter
         }
 
         var payload = AuthOutcomePayloadBuilder.Build(decision, userNKey, _timeProvider.GetUtcNow());
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, SerializerOptions);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, AuthOutcomeEventJsonContext.Default.AuthOutcomeEventPayload);
 
         try
         {
-            await _connection.PublishAsync(subject, bytes, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await _connection.PublishAsync(subject, bytes, cancellationToken: cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -92,16 +90,5 @@ public sealed class EventEmitter : IEventEmitter
             EventEmitterMetrics.PublishFailures.Add(1);
             _onPublishFailure?.Invoke(ex, subject);
         }
-    }
-
-    private static JsonSerializerOptions BuildSerializerOptions()
-    {
-        var options = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-        };
-        options.Converters.Add(new Rfc3339DateTimeOffsetConverter());
-        return options;
     }
 }

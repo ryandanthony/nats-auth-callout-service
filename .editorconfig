@@ -47,3 +47,9 @@ indent_size = 4
 # C# files
 [*.cs]
 indent_size = 4
+
+# This repo deliberately does NOT use .ConfigureAwait(false): it is a headless
+# worker service with no SynchronizationContext, so the calls change nothing at
+# runtime (swept repo-wide in 5f94eba). Pinned here so the decision survives a
+# FestinaLente.CodeStandards ruleset change re-enabling CA2007.
+dotnet_diagnostic.CA2007.severity = none

@@ -43,7 +43,7 @@ public static class AssertionKeyResolver
 
         foreach (var key in assertionKeys)
         {
-            using var secret = await secretResolver.ResolveAsync(key.Key, cancellationToken).ConfigureAwait(false);
+            using var secret = await secretResolver.ResolveAsync(key.Key, cancellationToken);
             using var keyPair = KeyPair.FromSeed(secret.Reveal());
             resolved.Add(new ResolvedPublicAssertionKey(key.Kid, keyPair.GetPublicKey(), key.Active));
         }

@@ -62,7 +62,21 @@ public static class BootstrapConfigLoader
         JsonElement root;
         try
         {
-            root = IsJson(path) ? JsonSerializer.Deserialize<JsonElement>(text) : YamlToJsonConverter.Convert(text);
+            if (IsJson(path))
+            {
+                // JsonDocument.Parse (not JsonSerializer.Deserialize<JsonElement>) is the
+                // trim/R2R-safe path: it parses text directly into a JsonElement tree without
+                // going through JsonSerializer's reflection-based deserialization, so it
+                // carries no RequiresUnreferencedCode warning under PublishTrimmed (doc 08
+                // §Runtime & trimming). The Dockerfile publishes ReadyToRun, not trimmed (see
+                // its header), so this keeps our own code trim-clean rather than being required.
+                using var document = JsonDocument.Parse(text);
+                root = document.RootElement.Clone();
+            }
+            else
+            {
+                root = YamlToJsonConverter.Convert(text);
+            }
         }
         catch (Exception ex) when (ex is JsonException or YamlDotNet.Core.YamlException or InvalidOperationException)
         {

@@ -26,7 +26,7 @@ internal sealed class FakeRoutingConfigProvider : IRoutingConfigProvider
     public async Task PushAsync(RoutingConfigBatch batch)
     {
         LastSuccessfulSync = batch.ObservedAt;
-        await _channel.Writer.WriteAsync(batch).ConfigureAwait(false);
+        await _channel.Writer.WriteAsync(batch);
     }
 
     public void Complete() => _channel.Writer.TryComplete();

@@ -46,7 +46,11 @@ public sealed class GrantBuilderTests
         // plus the client inbox for the KV read reply path.
         Assert.Contains("$KV.callout_assertion_keys.>", decision.Subscribe);
         Assert.Contains("$KV.callout_apps_notes_discovery.descriptor", decision.Subscribe);
-        Assert.Contains("_INBOX.>", decision.Subscribe);
+
+        // The inbox reply path is scoped to this connection's slug + derived principal
+        // (never the account-wide _INBOX.>, which would allow cross-client eavesdropping).
+        Assert.Contains(AppSlug.From("notes").ClientInboxSubscribeSubject("user-1"), decision.Subscribe);
+        Assert.DoesNotContain("_INBOX.>", decision.Subscribe);
         Assert.Contains("notes.updates", decision.Subscribe);
     }
 
@@ -75,7 +79,7 @@ public sealed class GrantBuilderTests
         // (option A), on top of the $KV read subject, plus the inbox reply path.
         Assert.Contains("$JS.API.STREAM.INFO.KV_callout_apps_notes_oidc_tokens", result.Decision!.Publish);
         Assert.Contains("$JS.API.DIRECT.GET.KV_callout_apps_notes_oidc_tokens", result.Decision!.Publish);
-        Assert.Contains("_INBOX.>", result.Decision!.Subscribe);
+        Assert.Contains(AppSlug.From("notes").ClientInboxSubscribeSubject("user-1"), result.Decision!.Subscribe);
     }
 
     [Fact]
@@ -105,7 +109,7 @@ public sealed class GrantBuilderTests
 
         Assert.Null(result.DenyReason);
         Assert.Equal(expectedKey, result.Decision!.SelfLookupKey);
-        Assert.Contains($"$KV.callout_apps_notes_assertions.{expectedKey}", result.Decision!.Subscribe);
+        Assert.Contains($"$KV.callout_apps_notes_assertions.{AppSlug.DeriveKeySegment(expectedKey)}", result.Decision!.Subscribe);
     }
 
     [Fact]

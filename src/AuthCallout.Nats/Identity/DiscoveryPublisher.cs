@@ -20,16 +20,10 @@ namespace AuthCallout.Nats.Identity;
 /// header name, the three physical bucket names, and the current <c>kid</c>; the disabled
 /// variant omits all four (ADR 0012 §2).
 /// </summary>
-public sealed class DiscoveryPublisher
+public sealed partial class DiscoveryPublisher
 {
     private const int DescriptorSchemaVersion = 1;
     private const string HeaderName = "Callout-Identity";
-
-    private static readonly JsonSerializerOptions SerializerOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
 
     private readonly INatsKVContext _kvContext;
 
@@ -63,13 +57,13 @@ public sealed class DiscoveryPublisher
             var slug = application.Slug;
             var enabled = application.EffectiveIdentityPropagation.Enabled && currentKid is not null;
             var descriptor = BuildDescriptor(slug.Value, enabled, slug, currentKid);
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(descriptor, SerializerOptions);
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(descriptor, DiscoveryJsonContext.Default.DiscoveryDescriptor);
 
             // BucketProvisioner.BucketConfig so the marker-TTL setting matches the provisioner's
             // (a bare NatsKVConfig re-issued against an already-provisioned bucket makes the
             // server reject the update: "message TTL status can not be disabled").
-            var store = await _kvContext.CreateOrUpdateStoreAsync(BucketProvisioner.BucketConfig(slug.DiscoveryBucket), cancellationToken).ConfigureAwait(false);
-            await store.PutAsync(AppSlug.DiscoveryDescriptorKey, bytes, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var store = await _kvContext.CreateOrUpdateStoreAsync(BucketProvisioner.BucketConfig(slug.DiscoveryBucket), cancellationToken);
+            await store.PutAsync(AppSlug.DiscoveryDescriptorKey, bytes, cancellationToken: cancellationToken);
         }
     }
 
@@ -92,4 +86,18 @@ public sealed class DiscoveryPublisher
         string? AssertionBucket,
         string? AssertionKeysBucket,
         string? CurrentKid);
+
+    /// <summary>
+    /// Source-generated <see cref="JsonSerializerContext"/> for <see cref="DiscoveryDescriptor"/>
+    /// (trim/R2R-safe: no reflection at serialize time, doc 08 §Runtime &amp; trimming). Nested
+    /// inside <see cref="DiscoveryPublisher"/> because both target types are private to it.
+    /// <see cref="IdentityPropagationDescriptor"/> does not need its own <c>[JsonSerializable]</c>
+    /// entry: the generator already includes every type reachable from
+    /// <see cref="DiscoveryDescriptor"/>'s own properties.
+    /// </summary>
+    [JsonSourceGenerationOptions(
+        PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonSerializable(typeof(DiscoveryDescriptor))]
+    private sealed partial class DiscoveryJsonContext : JsonSerializerContext;
 }

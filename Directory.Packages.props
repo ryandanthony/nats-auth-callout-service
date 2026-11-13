@@ -16,6 +16,15 @@
     <PackageVersion Include="NATS.NKeys" Version="1.0.2" />
   </ItemGroup>
 
+  <ItemGroup Label="Wolverine (dev sample messaging, dev/ only — not referenced by any shipped src/ project)">
+    <PackageVersion Include="WolverineFx" Version="6.33.0" />
+    <PackageVersion Include="WolverineFx.Nats" Version="6.33.0" />
+    <!-- Core WolverineFx 6.x no longer ships the runtime (Roslyn) handler-code compiler; a
+         host that lets Wolverine generate handler/middleware code at startup must reference
+         this, else it throws TypeLoadMode.Dynamic-with-no-IAssemblyGenerator on boot. -->
+    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.33.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Kubernetes">
     <PackageVersion Include="KubernetesClient" Version="19.0.2" />
   </ItemGroup>
@@ -35,9 +44,9 @@
   </ItemGroup>
 
   <ItemGroup Label="Hosting / resilience">
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.9.0" />
-    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.15" />
   </ItemGroup>
 
   <ItemGroup Label="Observability">
@@ -56,6 +65,9 @@
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.15.0" />
     <PackageVersion Include="Testcontainers.K3s" Version="4.15.0" />
     <PackageVersion Include="Alba" Version="8.5.3" />
+    <!-- Real-NATS (Testcontainers) latency-goal benchmark suite (tests/AuthCallout.Benchmarks),
+         not a `dotnet test` xunit project: run via `dotnet run -c Release`. -->
+    <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <!-- Test-only JSON Schema (draft 2020-12) validator, coordinator-approved (P02 DM) for
          AuthCallout.Contracts.Tests to validate doc-09 example fixtures against the four
          hand-authored schemas. Never referenced by AuthCallout.Contracts itself. -->
@@ -63,11 +75,11 @@
   </ItemGroup>
 
   <ItemGroup Label="Aspire dev loop (P15, dev/ only — not referenced by any shipped src/ project)">
-    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.5.3" />
-    <PackageVersion Include="Aspire.Hosting.Nats" Version="13.5.3" />
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.6.5" />
+    <PackageVersion Include="Aspire.Hosting.Nats" Version="13.6.5" />
     <!-- Keycloak's Aspire integration is prerelease-only (no stable release exists yet);
          acceptable because it is dev-loop tooling that never ships in the service image. -->
-    <PackageVersion Include="Aspire.Hosting.Keycloak" Version="13.5.3-preview.1.26425.3" />
-    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.K3s" Version="13.5.0" />
+    <PackageVersion Include="Aspire.Hosting.Keycloak" Version="13.6.5-preview.1.26559.7" />
+    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.K3s" Version="13.6.1" />
   </ItemGroup>
 </Project>

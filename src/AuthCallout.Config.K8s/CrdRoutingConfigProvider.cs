@@ -125,7 +125,7 @@ public sealed class CrdRoutingConfigProvider : IRoutingConfigProvider
         }
 
         _disposed = true;
-        await _disposalCts.CancelAsync().ConfigureAwait(false);
+        await _disposalCts.CancelAsync();
         _disposalCts.Dispose();
 
         if (_disposeClient && _client is IDisposable disposableClient)
@@ -155,7 +155,7 @@ public sealed class CrdRoutingConfigProvider : IRoutingConfigProvider
         {
             while (true)
             {
-                var batch = await pendingBatches.TakeAsync(token).ConfigureAwait(false);
+                var batch = await pendingBatches.TakeAsync(token);
                 if (batch is null)
                 {
                     yield break;
@@ -166,7 +166,7 @@ public sealed class CrdRoutingConfigProvider : IRoutingConfigProvider
         }
         finally
         {
-            await StopSupervisorAsync(supervisorTask).ConfigureAwait(false);
+            await StopSupervisorAsync(supervisorTask);
         }
     }
 
@@ -216,7 +216,7 @@ public sealed class CrdRoutingConfigProvider : IRoutingConfigProvider
         try
         {
             await _client.PatchStatusAsync(
-                status.Resource, status.Resource.Generation, status.Accepted, status.Reason, token).ConfigureAwait(false);
+                status.Resource, status.Resource.Generation, status.Accepted, status.Reason, token);
         }
         catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException or OperationCanceledException)
         {
@@ -231,7 +231,7 @@ public sealed class CrdRoutingConfigProvider : IRoutingConfigProvider
         try
         {
 #pragma warning disable VSTHRD003 // supervisorTask was already started (and is running) by the caller before being passed in here; awaiting it is the intended join point, not a foreign/unstarted task.
-            await supervisorTask.ConfigureAwait(false);
+            await supervisorTask;
 #pragma warning restore VSTHRD003
         }
         catch (OperationCanceledException)

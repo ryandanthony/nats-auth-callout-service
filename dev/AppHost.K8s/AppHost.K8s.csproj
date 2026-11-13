@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <Sdk Name="Aspire.AppHost.Sdk" Version="13.5.3" />
+  <Sdk Name="Aspire.AppHost.Sdk" Version="13.6.5" />
 
   <!-- P15 AppHost.K8s (doc 08 §Local development, "AppHost 2 - AppHost.K8s (CRD source, local
        K3s)"): the cluster loop. Same callout binary, samples, NATS, and Keycloak dev IdP as
@@ -23,7 +23,9 @@
          statement AppHost.cs, which declares no type. CA1017 fires because Aspire's
          source-generated Projects.* types are externally visible; this AppHost is never
          COM-consumed, so ComVisible(false) would be a no-op ceremony, not a real fix. -->
-    <NoWarn>$(NoWarn);MA0048;CA1017</NoWarn>
+    <!-- ASPIRE010 (Aspire 13.6+): this AppHost runs via `dotnet run` / `just`, not the Aspire CLI
+         bundle, so AspireUseCliBundle stays at its default false (same behaviour as 13.5). -->
+    <NoWarn>$(NoWarn);MA0048;CA1017;ASPIRE010</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
