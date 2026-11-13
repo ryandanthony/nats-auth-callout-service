@@ -5,7 +5,6 @@
 // -----------------------------------------------------------------------
 
 using System.IdentityModel.Tokens.Jwt;
-using System.Text.Json;
 using AuthCallout.Contracts.Config;
 using AuthCallout.Contracts.Decisions;
 using AuthCallout.Contracts.Seams;
@@ -186,10 +185,6 @@ public sealed class TokenValidator : ITokenValidator
         _ => DenyReason.SignatureInvalid,
     };
 
-    private static ClaimsAccessor BuildClaimsAccessor(IDictionary<string, object> claims)
-    {
-        var json = JsonSerializer.Serialize(claims);
-        using var document = JsonDocument.Parse(json);
-        return new ClaimsAccessor(document.RootElement);
-    }
+    private static ClaimsAccessor BuildClaimsAccessor(IDictionary<string, object> claims) =>
+        new(ClaimsDictionaryToJsonConverter.Convert(claims));
 }

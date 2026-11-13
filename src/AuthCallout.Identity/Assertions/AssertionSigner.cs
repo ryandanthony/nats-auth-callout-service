@@ -8,6 +8,7 @@ using System.Buffers.Text;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using AuthCallout.Contracts.Seams;
 using NATS.NKeys;
 
@@ -21,7 +22,7 @@ namespace AuthCallout.Identity.Assertions;
 /// bootstrap <c>AssertionKey</c> list; re-checked here defensively since this type can be
 /// constructed directly in tests).
 /// </summary>
-public sealed class AssertionSigner : IAssertionSigner, IDisposable
+public sealed partial class AssertionSigner : IAssertionSigner, IDisposable
 {
     /// <summary>The fixed header <c>typ</c> (RFC 7519 §5.1), matching the repo's other compact-JWT producer (<c>NATS.Jwt</c>).</summary>
     private const string HeaderType = "JWT";
@@ -34,8 +35,6 @@ public sealed class AssertionSigner : IAssertionSigner, IDisposable
 
     /// <summary>A compact JWT is header.payload.signature: exactly three dot-separated segments.</summary>
     private const int CompactJwtSegmentCount = 3;
-
-    private static readonly JsonSerializerOptions SerializerOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     private readonly Dictionary<string, KeyPair> _verifyKeysByKid = new(StringComparer.Ordinal);
     private readonly string _activeKid;
@@ -88,8 +87,8 @@ public sealed class AssertionSigner : IAssertionSigner, IDisposable
         var header = new AssertionHeader(HeaderType, HeaderAlgorithm, _activeKid);
         var payload = new AssertionPayload(SchemaVersion, claims.Id, claims.Subject, claims.Application, claims.Issuer, claims.Expiry.ToUnixTimeSeconds());
 
-        var headerSegment = EncodeSegment(header);
-        var payloadSegment = EncodeSegment(payload);
+        var headerSegment = EncodeSegment(header, AssertionJsonContext.Default.AssertionHeader);
+        var payloadSegment = EncodeSegment(payload, AssertionJsonContext.Default.AssertionPayload);
         var signingInput = $"{headerSegment}.{payloadSegment}";
         var signatureBytes = SignBytes(_activeKeyPair, signingInput);
         var signatureSegment = Base64Url.EncodeToString(signatureBytes);
@@ -116,8 +115,8 @@ public sealed class AssertionSigner : IAssertionSigner, IDisposable
         byte[] signatureBytes;
         try
         {
-            header = JsonSerializer.Deserialize<AssertionHeader>(Base64Url.DecodeFromChars(headerSegment), SerializerOptions);
-            payload = JsonSerializer.Deserialize<AssertionPayload>(Base64Url.DecodeFromChars(payloadSegment), SerializerOptions);
+            header = JsonSerializer.Deserialize(Base64Url.DecodeFromChars(headerSegment), AssertionJsonContext.Default.AssertionHeader);
+            payload = JsonSerializer.Deserialize(Base64Url.DecodeFromChars(payloadSegment), AssertionJsonContext.Default.AssertionPayload);
             signatureBytes = Base64Url.DecodeFromChars(signatureSegment);
         }
         catch (Exception ex) when (ex is FormatException or JsonException)
@@ -161,8 +160,8 @@ public sealed class AssertionSigner : IAssertionSigner, IDisposable
         }
     }
 
-    private static string EncodeSegment<T>(T value) =>
-        Base64Url.EncodeToString(JsonSerializer.SerializeToUtf8Bytes(value, SerializerOptions));
+    private static string EncodeSegment<T>(T value, JsonTypeInfo<T> typeInfo) =>
+        Base64Url.EncodeToString(JsonSerializer.SerializeToUtf8Bytes(value, typeInfo));
 
     private static byte[] SignBytes(KeyPair keyPair, string signingInput)
     {
@@ -190,4 +189,19 @@ public sealed class AssertionSigner : IAssertionSigner, IDisposable
         string App,
         string Iss,
         long Exp);
+
+    /// <summary>
+    /// Source-generated <see cref="JsonSerializerContext"/> for <see cref="AssertionHeader"/> and
+    /// <see cref="AssertionPayload"/> (trim/R2R-safe: no reflection at serialize/deserialize time,
+    /// doc 08 §Runtime &amp; trimming). Nested inside <see cref="AssertionSigner"/> because both
+    /// target types are private to it. <see cref="JsonSourceGenerationOptionsAttribute.PropertyNamingPolicy"/>
+    /// must be set here, on the generator attribute itself — setting
+    /// <see cref="JsonSerializerOptions.PropertyNamingPolicy"/> on the runtime options passed to
+    /// <see cref="JsonSerializer"/> has no effect on a source-generated contract, since the
+    /// camelCase property names are baked in at compile time instead.
+    /// </summary>
+    [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+    [JsonSerializable(typeof(AssertionHeader))]
+    [JsonSerializable(typeof(AssertionPayload))]
+    private sealed partial class AssertionJsonContext : JsonSerializerContext;
 }
