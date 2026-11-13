@@ -22,7 +22,9 @@ jobs:
   # see src/Directory.Build.props) to nuget.org via Trusted Publishing: NuGet/login swaps this
   # workflow's GitHub OIDC token for a short-lived API key, so no NuGet API key is stored.
   # One-time setup: a nuget.org Trusted Publishing policy (owner ryandanthony, repo
-  # nats-auth-callout-service, workflow release.yml) plus the NUGET_USER repo variable set to
+  # nats-auth-callout-service, workflow release.yml, no environment; scope must allow pushing
+  # NEW packages since these IDs don't exist on nuget.org yet; glob AuthCallout.*) plus the
+  # NUGET_USER repo variable set to
   # the nuget.org account name. Skipped until NUGET_USER exists, so the image release below
   # never depends on it.
   nuget:
