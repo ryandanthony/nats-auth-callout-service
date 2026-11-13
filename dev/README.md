@@ -44,8 +44,9 @@ a `notes` token never yields `tasks.>` and vice versa.
   **Why this matters**: Aspire's `AddKeycloak` switches Keycloak's endpoint to
   HTTPS automatically in run mode once a dev cert is available. The callout's
   JWKS fetch path (`Microsoft.IdentityModel`'s `HttpDocumentRetriever`) has
-  `RequireHttps` on unconditionally — including here in dev — because P06/P08
-  never relax it for a "trusted" issuer. If Keycloak ends up serving plain
+  `RequireHttps` on by default, and these AppHosts keep it on (they don't set
+  `jwks.allowInsecureHttp`) so the dev loop exercises the production fetch path.
+  If Keycloak ends up serving plain
   HTTP (no cert trusted), JWKS prewarm fails and the callout never leaves
   `Starting` state. If port `8083` (`AppHost.Local`) or `8082`
   (`AppHost.K8s`) is already bound by something else on your machine, stop

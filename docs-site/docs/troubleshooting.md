@@ -74,7 +74,10 @@ Usually JWKS prewarm can't reach an issuer's discovery endpoint (network,
 DNS, or a self-signed cert the callout doesn't trust), or the config
 source has never produced a first valid batch. Check the `jwks` and
 `config-source` health check entries in the `/readyz` JSON body for the
-specific issuer/source at fault.
+specific issuer/source at fault. If the issuer is a plain-`http://` dev IdP
+(for example Keycloak in docker compose), the fetch is refused by design:
+set [`jwks.allowInsecureHttp: true`](./configuration/bootstrap-reference#jwks)
+for that dev/test deployment only.
 
 **Client connects but every KV read fails with "stream not found" (self-hosted NATS).**
 Almost always a missing cross-account JetStream export/import: the
