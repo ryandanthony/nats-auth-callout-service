@@ -42,7 +42,20 @@ public static class HealthAppBuilder
         ComponentGraphResult components)
     {
         var builder = WebApplication.CreateBuilder(args);
-        builder.WebHost.ConfigureKestrel(kestrel => kestrel.ListenAnyIP(HostPorts.Health));
+
+        // Only force the pinned D21 port when nothing has already told Kestrel where to bind
+        // (bare `dotnet run`, Docker/Kubernetes - see HostPorts.Health and doc 08). When Aspire
+        // orchestrates this project with a declared HTTP endpoint (AppHost.Local's "callout"
+        // resource), it injects a per-replica ASPNETCORE_URLS pointing at a unique internal
+        // port; explicitly calling ConfigureKestrel here would override that and make every
+        // replica fight over the literal 8080, so this only applies the hardcoded bind as a
+        // fallback for the no-ASPNETCORE_URLS case.
+        var aspNetCoreUrls = builder.Configuration["ASPNETCORE_URLS"];
+        if (string.IsNullOrEmpty(aspNetCoreUrls))
+        {
+            builder.WebHost.ConfigureKestrel(kestrel => kestrel.ListenAnyIP(HostPorts.Health));
+        }
+
         builder.Services.AddAuthCalloutHost(bootstrap, stateMachine, activeConfigSource, configApplyLoop, routingProvider, components);
 
         var app = builder.Build();
