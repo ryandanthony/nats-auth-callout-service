@@ -11,13 +11,79 @@ on:
 permissions:
   contents: write     # create the GitHub Release
   packages: write     # push the image to GHCR
-  id-token: write     # cosign keyless signing (OIDC) - required, not optional
+  id-token: write     # cosign keyless signing (OIDC) + nuget.org Trusted Publishing
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # Integration NuGet packages (AuthCallout.Contracts, AuthCallout.Core, AuthCallout.Identity;
+  # see src/Directory.Build.props) to nuget.org via Trusted Publishing: NuGet/login swaps this
+  # workflow's GitHub OIDC token for a short-lived API key, so no NuGet API key is stored.
+  # One-time setup: a nuget.org Trusted Publishing policy (owner ryandanthony, repo
+  # nats-auth-callout-service, workflow release.yml) plus the NUGET_USER repo variable set to
+  # the nuget.org account name. Skipped until NUGET_USER exists, so the image release below
+  # never depends on it.
+  nuget:
+    if: vars.NUGET_USER != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # GitVersion needs full history and tags
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v4
+        with:
+          versionSpec: '6.6.0'
+
+      - name: Determine version
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@v4
+
+      - name: Authenticate GitHub Packages (festina-lente-io feed)
+        run: >-
+          dotnet nuget update source github
+          --username "github-actions"
+          --password "${{ secrets.GITHUB_TOKEN }}"
+          --store-password-in-clear-text
+          --configfile nuget.config
+
+      # Version passed explicitly (same as the image's VERSION build arg) so every package
+      # and its inter-package dependency ranges carry the tag's version exactly.
+      - name: Pack
+        run: >-
+          dotnet pack AuthCallout.slnx -c Release -o artifacts/packages
+          -p:Version=${{ steps.gitversion.outputs.semVer }}
+          -p:DisableGitVersionTask=true
+
+      - name: NuGet login (nuget.org Trusted Publishing)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      # Pushing the .nupkg also pushes its sibling .snupkg to the nuget.org symbol server.
+      - name: Push to nuget.org
+        run: >-
+          dotnet nuget push "artifacts/packages/*.nupkg"
+          --source https://api.nuget.org/v3/index.json
+          --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}"
+          --skip-duplicate
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: artifacts/packages/*
+
   release:
     runs-on: ubuntu-latest
     steps:

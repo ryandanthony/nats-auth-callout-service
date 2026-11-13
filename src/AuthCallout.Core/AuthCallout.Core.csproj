@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <Description>Decision core of nats-auth-callout-service: claims access, claim matching and grant templates. A dependency of AuthCallout.Identity, with no transport or storage dependencies.</Description>
+  </PropertyGroup>
+
   <!-- Decision core: pipeline, selectors, matcher, minter. No transport, storage,
        or k8s package references (doc 08 reference-isolation invariant). -->
 

@@ -8,7 +8,7 @@ namespace AuthCallout.Identity.Assertions;
 
 /// <summary>
 /// One entry of the assertion signing keyset (ADR 0011, ADR 0014) with its
-/// <see cref="AuthCallout.Contracts.Config.SecretRef"/> already resolved to a plaintext Ed25519
+/// <see cref="AuthCallout.Contracts.Primitives.SecretRef"/> already resolved to a plaintext Ed25519
 /// NKey seed. <see cref="AssertionSigner"/> consumes a list of these; the caller (P13's
 /// startup composition) resolves each <see cref="AuthCallout.Contracts.Config.AssertionKey.Key"/>
 /// via <see cref="AuthCallout.Contracts.Seams.ISecretResolver"/> once, since resolution is a

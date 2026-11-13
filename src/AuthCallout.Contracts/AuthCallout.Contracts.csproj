@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <Description>Shared contracts for nats-auth-callout-service: AppSlug KV bucket, key and scoped-inbox naming rules, AssertionClaims, and the config and decision model. Reference it to integrate a NATS client or subscriber with the callout.</Description>
+  </PropertyGroup>
+
   <!-- Canonical config model, Grant, ClaimMatch, SecretRef. No transport, storage,
        or k8s package references (doc 08 reference-isolation invariant). Filled in by P02.
        No project references: this is the leaf of the dependency graph. -->

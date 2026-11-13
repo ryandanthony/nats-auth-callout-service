@@ -13,6 +13,22 @@ subjects. Grounds: [ADR 0010](https://github.com/ryandanthony/nats-auth-callout-
 [ADR 0011](https://github.com/ryandanthony/nats-auth-callout-service/blob/main/docs/architecture-decision-log/0011-signed-identity-assertion.md),
 [doc 06](https://github.com/ryandanthony/nats-auth-callout-service/blob/main/docs/design/06-identity-propagation-sequence.md).
 
+## NuGet packages for .NET integrators
+
+The naming rules and the verifier are published to nuget.org, so a .NET client or subscriber uses the same code as the callout itself instead of copying it:
+
+```bash
+dotnet add package AuthCallout.Identity   # brings AuthCallout.Contracts and AuthCallout.Core
+```
+
+| Package | What you use from it |
+|---|---|
+| `AuthCallout.Contracts` | `AppSlug`: bucket names (`DiscoveryBucket`, `AssertionsBucket`, `OidcTokensBucket`, `AssertionKeysBucket`), `DiscoveryDescriptorKey`, KV key derivation (`SanitizeKeySegment`, `DeriveKeySegment`), and `ClientInboxPrefix`. `AssertionClaims`. |
+| `AuthCallout.Identity` | `AssertionSigner.Verify(compactJwt, publicKey)` to check a `Callout-Identity` header. |
+| `AuthCallout.Core` | Dependency of Identity. Not normally referenced directly. |
+
+Package versions match the service release tag (`v1.2.3` publishes `1.2.3`). The repo's [`dev/samples/Shared`](https://github.com/ryandanthony/nats-auth-callout-service/tree/main/dev/samples/Shared) shows the full flow built on these packages: discovery, self-assertion fetch, verification and OIDC token resolution.
+
 ## The full sequence
 
 ```mermaid

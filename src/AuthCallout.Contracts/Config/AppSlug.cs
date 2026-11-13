@@ -42,8 +42,16 @@ public readonly struct AppSlug : IEquatable<AppSlug>
     /// <value>The slug text.</value>
     public string Value { get; }
 
+    /// <summary>Compares two slugs for ordinal equality.</summary>
+    /// <param name="left">The first slug.</param>
+    /// <param name="right">The second slug.</param>
+    /// <returns><see langword="true"/> when both slugs have the same value.</returns>
     public static bool operator ==(AppSlug left, AppSlug right) => left.Equals(right);
 
+    /// <summary>Compares two slugs for ordinal inequality.</summary>
+    /// <param name="left">The first slug.</param>
+    /// <param name="right">The second slug.</param>
+    /// <returns><see langword="true"/> when the slugs differ.</returns>
     public static bool operator !=(AppSlug left, AppSlug right) => !left.Equals(right);
 
     /// <summary>

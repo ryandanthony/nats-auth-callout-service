@@ -176,7 +176,7 @@ public sealed partial class AssertionSigner : IAssertionSigner, IDisposable
 
     /// <summary>
     /// The assertion's JWT payload: exactly the ADR 0011 claim set plus <c>schemaVersion</c>
-    /// (D20). The version property carries an explicit <see cref="JsonPropertyName"/> because
+    /// (D20). The version property carries an explicit <see cref="JsonPropertyNameAttribute"/> because
     /// the wire field is the documented interop contract, <c>schemaVersion</c> — the C#
     /// property name is longer only to avoid colliding with the type-level
     /// <see cref="SchemaVersion"/> constant, and that naming choice must never leak into the
