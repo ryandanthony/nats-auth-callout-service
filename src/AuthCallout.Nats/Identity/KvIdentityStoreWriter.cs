@@ -66,8 +66,39 @@ public sealed class KvIdentityStoreWriter : IIdentityStoreWriter
     /// <inheritdoc />
     public async Task ProvisionBucketsAsync(RoutingConfig routing, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(routing);
+
         await _bucketProvisioner.ProvisionAsync(routing, cancellationToken);
         _stores.Clear();
+
+        // Prewarm the token-store handle cache for every propagation-enabled application
+        // (mirrors AuthCalloutHostedService's JWKS prewarm, doc 08). Without this, the very
+        // first WriteAsync after any provision - including every fresh replica's first-ever
+        // request - pays KvStoreCache's uncached $JS.API.STREAM.INFO round trip inline on the
+        // auth hot path (observed as a callout_request_duration_ms outlier, ~300ms locally).
+        // Best-effort: a prewarm failure must not stop this method from returning (the caller,
+        // ConfigApplyLoopFactory.OnAppliedAsync, calls PublishKeysAndDiscoveryAsync right after
+        // - that must still run even if a KV lookup here fails), and WriteAsync's own cache
+        // miss on the next real request simply repeats the same lookup, so nothing is lost by
+        // swallowing it here.
+        var prewarmTasks = routing.Applications
+            .Where(static app => app.EffectiveIdentityPropagation.Enabled)
+            .Select(app => PrewarmTokenStoreAsync(app.Slug.OidcTokensBucket, cancellationToken));
+        await Task.WhenAll(prewarmTasks);
+    }
+
+    private async Task PrewarmTokenStoreAsync(string oidcTokensBucket, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _stores.GetAsync(oidcTokensBucket, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Swallowed: see the ProvisionBucketsAsync comment above this call. The bucket was
+            // just created/updated by _bucketProvisioner above, so a lookup failure here means
+            // a transient KV/connection issue, not a missing bucket.
+        }
     }
 
     /// <inheritdoc />

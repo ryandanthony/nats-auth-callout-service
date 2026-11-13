@@ -309,6 +309,113 @@ public sealed class KvIdentityStoreWriterTests
         await kvContext.DidNotReceiveWithAnyArgs().GetStoreAsync(default!, default);
     }
 
+    [Fact]
+    public async Task ProvisionBucketsAsync_PropagationEnabledApp_PrewarmsTokenStoreCache()
+    {
+        // Without this prewarm, WriteAsync's own first-ever GetStoreAsync call for the
+        // bucket runs inline on the auth hot path (the callout_request_duration_ms outlier
+        // this fix targets). ProvisionBucketsAsync must pay that round trip itself, up front.
+        var tokenStore = Substitute.For<INatsKVStore>();
+        var kvContext = ContextReturning(tokenStore, Substitute.For<INatsKVStore>());
+        var writer = new KvIdentityStoreWriter(kvContext, Substitute.For<IAssertionSigner>(), Substitute.For<ISecretResolver>(), FixedTimeProvider());
+        var routing = IdentityTestBuilders.RoutingFor(IdentityTestBuilders.ApplicationWithPropagation("notes", propagationEnabled: true));
+
+        await writer.ProvisionBucketsAsync(routing, CancellationToken.None);
+
+        await kvContext.Received(1).GetStoreAsync("callout_apps_notes_oidc_tokens", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ProvisionBucketsAsync_ThenWriteAsync_DoesNotLookUpTokenStoreAgain()
+    {
+        // The prewarm must actually land in KvStoreCache, not just probe the server and
+        // discard the result - WriteAsync's later lookup must be a cache hit.
+        var tokenStore = Substitute.For<INatsKVStore>();
+        var kvContext = ContextReturning(tokenStore, Substitute.For<INatsKVStore>());
+        var signer = SignerReturning(new SignedAssertion("header.payload.sig", "kid-1"));
+        var writer = new KvIdentityStoreWriter(kvContext, signer, Substitute.For<ISecretResolver>(), FixedTimeProvider());
+        var routing = IdentityTestBuilders.RoutingFor(IdentityTestBuilders.ApplicationWithPropagation("notes", propagationEnabled: true));
+        var grant = IdentityTestBuilders.GrantFor("notes", propagationEnabled: true, selfLookupKey: "jti-1", FixedNow.AddMinutes(5));
+
+        await writer.ProvisionBucketsAsync(routing, CancellationToken.None);
+        var result = await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        await kvContext.Received(1).GetStoreAsync("callout_apps_notes_oidc_tokens", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ProvisionBucketsAsync_PropagationDisabledApp_DoesNotPrewarmTokenStoreCache()
+    {
+        var kvContext = ContextReturning(Substitute.For<INatsKVStore>(), Substitute.For<INatsKVStore>());
+        var writer = new KvIdentityStoreWriter(kvContext, Substitute.For<IAssertionSigner>(), Substitute.For<ISecretResolver>(), FixedTimeProvider());
+        var routing = IdentityTestBuilders.RoutingFor(IdentityTestBuilders.ApplicationWithPropagation("tasks", propagationEnabled: false));
+
+        await writer.ProvisionBucketsAsync(routing, CancellationToken.None);
+
+        await kvContext.DidNotReceiveWithAnyArgs().GetStoreAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task ProvisionBucketsAsync_MultiplePropagationEnabledApps_PrewarmsEachTokenStoreCache()
+    {
+        var kvContext = Substitute.For<INatsKVContext>();
+        kvContext.GetStoreAsync("callout_apps_notes_oidc_tokens", Arg.Any<CancellationToken>()).Returns(Substitute.For<INatsKVStore>());
+        kvContext.GetStoreAsync("callout_apps_tasks_oidc_tokens", Arg.Any<CancellationToken>()).Returns(Substitute.For<INatsKVStore>());
+        var writer = new KvIdentityStoreWriter(kvContext, Substitute.For<IAssertionSigner>(), Substitute.For<ISecretResolver>(), FixedTimeProvider());
+        var routing = IdentityTestBuilders.RoutingFor(
+            IdentityTestBuilders.ApplicationWithPropagation("notes", propagationEnabled: true),
+            IdentityTestBuilders.ApplicationWithPropagation("tasks", propagationEnabled: true));
+
+        await writer.ProvisionBucketsAsync(routing, CancellationToken.None);
+
+        await kvContext.Received(1).GetStoreAsync("callout_apps_notes_oidc_tokens", Arg.Any<CancellationToken>());
+        await kvContext.Received(1).GetStoreAsync("callout_apps_tasks_oidc_tokens", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ProvisionBucketsAsync_PrewarmLookupThrows_DoesNotPropagate_StillReturns()
+    {
+        // Best-effort: a transient KV failure during prewarm must not stop provisioning from
+        // completing (the caller still needs to run PublishKeysAndDiscoveryAsync right after).
+        var kvContext = Substitute.For<INatsKVContext>();
+        kvContext.GetStoreAsync("callout_apps_notes_oidc_tokens", Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromException<INatsKVStore>(new NatsException("stream info failed")));
+        var writer = new KvIdentityStoreWriter(kvContext, Substitute.For<IAssertionSigner>(), Substitute.For<ISecretResolver>(), FixedTimeProvider());
+        var routing = IdentityTestBuilders.RoutingFor(IdentityTestBuilders.ApplicationWithPropagation("notes", propagationEnabled: true));
+
+        var task = writer.ProvisionBucketsAsync(routing, CancellationToken.None);
+        await task;
+
+        Assert.True(task.IsCompletedSuccessfully);
+    }
+
+    [Fact]
+    public async Task ProvisionBucketsAsync_PrewarmLookupThrows_NextWriteAsyncStillRetriesLookup()
+    {
+        // A failed prewarm must not be cached as a permanent failure (mirrors
+        // WriteAsync_StoreLookupFails_FailsClosed_AndIsRetriedOnNextRequest): the KvStoreCache
+        // contract evicts failed lookups, so the real request after a failed prewarm gets its
+        // own fresh attempt rather than reusing the prewarm's failure.
+        var tokenStore = Substitute.For<INatsKVStore>();
+        var kvContext = ContextReturning(tokenStore, Substitute.For<INatsKVStore>());
+        var calls = 0;
+        kvContext.GetStoreAsync("callout_apps_notes_oidc_tokens", Arg.Any<CancellationToken>())
+            .Returns(_ => Interlocked.Increment(ref calls) == 1
+                ? ValueTask.FromException<INatsKVStore>(new NatsException("stream info failed"))
+                : ValueTask.FromResult(tokenStore));
+        var signer = SignerReturning(new SignedAssertion("header.payload.sig", "kid-1"));
+        var writer = new KvIdentityStoreWriter(kvContext, signer, Substitute.For<ISecretResolver>(), FixedTimeProvider());
+        var routing = IdentityTestBuilders.RoutingFor(IdentityTestBuilders.ApplicationWithPropagation("notes", propagationEnabled: true));
+        var grant = IdentityTestBuilders.GrantFor("notes", propagationEnabled: true, selfLookupKey: "jti-1", FixedNow.AddMinutes(5));
+
+        await writer.ProvisionBucketsAsync(routing, CancellationToken.None);
+        var result = await writer.WriteAsync(grant, "raw-oidc-token", CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(2, calls);
+    }
+
     private static TimeProvider FixedTimeProvider() => new FixedTimeProviderImpl(FixedNow);
 
     private static INatsKVContext ContextReturning(INatsKVStore tokenStore, INatsKVStore assertionStore)
