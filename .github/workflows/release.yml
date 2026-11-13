@@ -1,54 +1,138 @@
 name: release
 
-# Tag-based releases: push a tag like v1.2.3 to cut a release (doc 08 §Container & supply
-# chain, matching the mcp-private-library/playmetrics-mcp convention: tag-based CI, no
-# auto-deploy). ci.yml (P01) gates every push/PR to main; this workflow only runs on tags.
+# Release on every green push to the trunk (main). tag == release: a v* tag only ever exists
+# together with its GitHub Release, image and NuGet packages.
+#
+# Trunk-based flow (same model as wraithcairn / mcp-private-library):
+#   1. Runs after CI completes successfully on a push to main, so only green commits release.
+#   2. GitVersion computes the next version from the latest vX.Y.Z tag + commits (patch bump by
+#      default; "+semver: minor" / "+semver: major" in a commit message bumps further).
+#   3. Skips when nothing release-relevant changed since the last tag (docs/markdown only), or
+#      when the commit is already tagged.
+#   4. Builds, pushes and cosign-signs the multi-arch image, and publishes the NuGet packages.
+#   5. Last, creates the tag and GitHub Release together, so a failed build never leaves an
+#      orphan tag. A failed run is safe to re-run: no tag exists yet, so it recomputes the same
+#      version, image tags are overwritten and NuGet pushes use --skip-duplicate.
+#
+# The pushed tag becomes the version source for the NEXT release. Tags created here with
+# GITHUB_TOKEN don't trigger other workflows, so there is no tag-push trigger.
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch: {}
 
 permissions:
-  contents: write     # create the GitHub Release
+  contents: write     # create the tag + GitHub Release
   packages: write     # push the image to GHCR
   id-token: write     # cosign keyless signing (OIDC) + nuget.org Trusted Publishing
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  version:
+    # workflow_run fires for every completed CI run on main; only release green pushes. A manual
+    # dispatch only releases from main.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.gate.outputs.release }}
+      sha: ${{ steps.gate.outputs.sha }}
+      version: ${{ steps.vars.outputs.version }}
+      tag: ${{ steps.vars.outputs.tag }}
+      major: ${{ steps.gitversion.outputs.major }}
+      minor: ${{ steps.gitversion.outputs.minor }}
+      informational: ${{ steps.gitversion.outputs.informationalVersion }}
+    steps:
+      - name: Checkout (full history for GitVersion)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+
+      # Release only commits that aren't tagged yet and that change something beyond docs.
+      - name: Release gate
+        id: gate
+        run: |
+          set -euo pipefail
+          SHA="$(git rev-parse HEAD)"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          if git tag --points-at "$SHA" | grep -q '^v'; then
+            echo "Commit $SHA is already tagged ($(git tag --points-at "$SHA" | tr '\n' ' ')); nothing to release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          LAST="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          if [ -n "$LAST" ]; then
+            CHANGED="$(git diff --name-only "$LAST" "$SHA" -- . \
+              ':(exclude)docs/**' ':(exclude)docs-site/**' ':(exclude)implementation-plan/**' \
+              ':(exclude)**/*.md' ':(exclude)*.md' ':(exclude).github/workflows/docs.yml')"
+            if [ -z "$CHANGED" ]; then
+              echo "Only docs changed since $LAST; nothing to release."
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install GitVersion
+        if: steps.gate.outputs.release == 'true'
+        uses: gittools/actions/gitversion/setup@v4
+        with:
+          # Match the GitVersion.MsBuild package pinned in Directory.Packages.props (6.6.0).
+          versionSpec: '6.6.0'
+
+      - name: Determine version
+        if: steps.gate.outputs.release == 'true'
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@v4
+
+      - name: Export version vars
+        if: steps.gate.outputs.release == 'true'
+        id: vars
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.gitversion.outputs.majorMinorPatch }}"
+          TAG="v$VERSION"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists on another commit; refusing to release over it."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG from ${{ steps.gate.outputs.sha }}"
+
   # Integration NuGet packages (AuthCallout.Contracts, AuthCallout.Core, AuthCallout.Identity;
   # see src/Directory.Build.props) to nuget.org via Trusted Publishing: NuGet/login swaps this
   # workflow's GitHub OIDC token for a short-lived API key, so no NuGet API key is stored.
   # One-time setup: a nuget.org Trusted Publishing policy (owner ryandanthony, repo
   # nats-auth-callout-service, workflow release.yml, no environment; scope must allow pushing
-  # NEW packages since these IDs don't exist on nuget.org yet; glob AuthCallout.*) plus the
-  # NUGET_USER repo variable set to
-  # the nuget.org account name. Skipped until NUGET_USER exists, so the image release below
-  # never depends on it.
+  # NEW packages; glob AuthCallout.*) plus the NUGET_USER repo variable set to the nuget.org
+  # account name. Skipped until NUGET_USER exists.
   nuget:
-    if: vars.NUGET_USER != ''
+    needs: version
+    if: needs.version.outputs.release == 'true' && vars.NUGET_USER != ''
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # GitVersion needs full history and tags
+          ref: ${{ needs.version.outputs.sha }}
+          fetch-depth: 0   # SourceLink/repository metadata
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-
-      - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v4
-        with:
-          versionSpec: '6.6.0'
-
-      - name: Determine version
-        id: gitversion
-        uses: gittools/actions/gitversion/execute@v4
 
       - name: Authenticate GitHub Packages (festina-lente-io feed)
         run: >-
@@ -58,12 +142,12 @@ jobs:
           --store-password-in-clear-text
           --configfile nuget.config
 
-      # Version passed explicitly (same as the image's VERSION build arg) so every package
-      # and its inter-package dependency ranges carry the tag's version exactly.
+      # Version passed explicitly so every package and its inter-package dependency ranges
+      # carry the release version exactly.
       - name: Pack
         run: >-
           dotnet pack AuthCallout.slnx -c Release -o artifacts/packages
-          -p:Version=${{ steps.gitversion.outputs.semVer }}
+          -p:Version=${{ needs.version.outputs.version }}
           -p:DisableGitVersionTask=true
 
       - name: NuGet login (nuget.org Trusted Publishing)
@@ -86,25 +170,17 @@ jobs:
           name: nuget-packages
           path: artifacts/packages/*
 
-  release:
+  image:
+    needs: version
+    if: needs.version.outputs.release == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # GitVersion needs full history and tags
-
-      - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v4
-        with:
-          # Match the GitVersion.MsBuild package pinned in Directory.Packages.props (6.6.0).
-          # gittools/actions v4 is the major that supports GitVersion 6.x; the older v3 line
-          # caps at <6.1.0, so '6.x' floated past its supported range and failed the install.
-          versionSpec: '6.6.0'
-
-      - name: Determine version
-        id: gitversion
-        uses: gittools/actions/gitversion/execute@v4
+          ref: ${{ needs.version.outputs.sha }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -122,9 +198,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ steps.gitversion.outputs.majorMinorPatch }}
-            type=raw,value=${{ steps.gitversion.outputs.major }}.${{ steps.gitversion.outputs.minor }}
-            type=raw,value=${{ steps.gitversion.outputs.semVer }}
+            type=raw,value=${{ needs.version.outputs.version }}
+            type=raw,value=${{ needs.version.outputs.major }}.${{ needs.version.outputs.minor }}
             type=sha
             type=raw,value=latest
 
@@ -141,8 +216,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ steps.gitversion.outputs.majorMinorPatch }}
-            INFORMATIONAL_VERSION=${{ steps.gitversion.outputs.informationalVersion }}
+            VERSION=${{ needs.version.outputs.version }}
+            INFORMATIONAL_VERSION=${{ needs.version.outputs.informational }}
           secrets: |
             nuget_github_token=${{ secrets.GITHUB_TOKEN }}
           sbom: true
@@ -162,10 +237,6 @@ jobs:
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
           cosign sign --yes "$IMAGE"
 
-      # The SBOM/provenance attestations were already attached to the manifest by buildx
-      # (sbom/provenance: true above); cosign additionally verifies + re-attests them under
-      # the same keyless identity so `cosign verify-attestation` (documented in README below)
-      # has something to check without needing to trust the registry's own attestation store.
       - name: Verify signature (fail the release if signing didn't take)
         run: |
           set -euo pipefail
@@ -174,25 +245,42 @@ jobs:
             --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 
-      - name: Create GitHub Release
+  # Tag + GitHub Release are created together, last, only once the image is published and
+  # the NuGet job did not fail (it may be skipped when NUGET_USER is unset).
+  release:
+    needs: [version, image, nuget]
+    if: >-
+      always() &&
+      needs.version.outputs.release == 'true' &&
+      needs.image.result == 'success' &&
+      (needs.nuget.result == 'success' || needs.nuget.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create tag and GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: v${{ steps.gitversion.outputs.majorMinorPatch }}
+          tag_name: ${{ needs.version.outputs.tag }}
+          target_commitish: ${{ needs.version.outputs.sha }}
+          name: ${{ needs.version.outputs.tag }}
+          make_latest: true
           generate_release_notes: true
           body: |
             Docker image:
 
             ```
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.gitversion.outputs.majorMinorPatch }}
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.version }}
             ```
 
-            Digest: `${{ steps.build.outputs.digest }}`
+            Digest: `${{ needs.image.outputs.digest }}`
+
+            NuGet: `AuthCallout.Contracts`, `AuthCallout.Core`, `AuthCallout.Identity` ${{ needs.version.outputs.version }}
 
             Signed with cosign (keyless/OIDC). Verify:
 
             ```
-            cosign verify ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }} \
+            cosign verify ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.image.outputs.digest }} \
               --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
               --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
             ```
+
+            Commit: ${{ needs.version.outputs.sha }}

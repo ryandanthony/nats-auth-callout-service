@@ -101,7 +101,10 @@ Multi-arch (`linux/amd64`, `linux/arm64`) images are built on
 `mcr.microsoft.com/dotnet/runtime` (self-contained, ReadyToRun, **not**
 trimmed — no ASP.NET/MVC base needed; trimming was tried and reverted
 because several transitive dependencies rely on reflection the trim
-analyzer can't verify) and published to GHCR on every tagged release:
+analyzer can't verify) and published to GHCR by every release. A release (version tag,
+GitHub Release, image and NuGet packages) is cut automatically on every green push to `main`
+that changes more than docs; the version comes from GitVersion (patch bump by default,
+`+semver: minor` / `+semver: major` in the commit message to bump further):
 
 ```bash
 docker pull ghcr.io/ryandanthony/nats-auth-callout-service:latest
@@ -144,6 +147,7 @@ cosign verify-attestation ghcr.io/ryandanthony/nats-auth-callout-service@<digest
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
 
-The full release workflow (build, sign, verify-before-publish) is in
+The full release workflow (version, build, sign, verify-before-publish, then tag + release) is in
 [`.github/workflows/release.yml`](https://github.com/ryandanthony/nats-auth-callout-service/blob/main/.github/workflows/release.yml)
-— every release fails closed if signing doesn't succeed.
+— every release fails closed if signing doesn't succeed, and the tag is only created once
+the image and packages are published.

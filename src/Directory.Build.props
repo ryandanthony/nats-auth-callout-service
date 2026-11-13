@@ -7,7 +7,8 @@
     what a client or subscriber needs to work with the callout): AuthCallout.Contracts (AppSlug bucket,
     key and inbox naming, AssertionClaims), AuthCallout.Identity (AssertionSigner.Verify), and
     AuthCallout.Core because Identity references it (ClaimsAccessor). Every other src/ project is the
-    service itself and stays IsPackable=false. Published to nuget.org from release.yml on v* tags via
+    service itself and stays IsPackable=false. Published to nuget.org by release.yml on every
+    green push to main (one release, tag and version per push) via
     Trusted Publishing.
   -->
   <PropertyGroup>
