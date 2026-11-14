@@ -32,7 +32,7 @@ Anonymous clients all share one account and one permission set, so protection is
 
    Anti-example: the dev loop's `server.conf` imports `$JS.API.>` / `$KV.>` from `AUTH` into `ANON` (a dev-only workaround). That import weakens the account boundary — only the minted grant's lack of those subjects keeps anon clients out (§2.4). A production `ANON` should have **no imports at all**.
 
-2. **Keep the grant subscribe-only wherever possible — but deny publish explicitly.** Contribute only genuinely public broadcast subjects to `anonymousProfile` (e.g. `subscribe: [notes.public.>]`). Anon clients that cannot publish cannot message each other at all (§4.1). **Trap (verified live, v2.15.3):** an *empty or omitted* publish list is **not** deny-all — NATS treats "no publish permission at all" as *unrestricted publish* (`buildPermissionsFromJwt`: empty allow + empty deny ⇒ no publish restriction). A subscribe-only user happily published to arbitrary subjects until given `publish: { deny: [">"] }`. So a truly subscribe-only grant must carry an **explicit publish deny `>`**. ⚠️ This repo's `UserJwtMinter` currently sets only `Allow` lists — if every app's `anonymousProfile` is subscribe-only, the minted anon JWT has an empty publish allow and anon clients can publish anywhere inside `ANON`. The minter should set `Pub.Deny: [">"]` (and symmetrically `Sub.Deny`) whenever the corresponding union list is empty.
+2. **Keep the grant subscribe-only wherever possible — and the minter now denies publish explicitly.** Contribute only genuinely public broadcast subjects to `anonymousProfile` (e.g. `subscribe: [notes.public.>]`). Anon clients that cannot publish cannot message each other at all (§4.1). **Trap (verified live, v2.15.3):** an *empty or omitted* publish list is **not** deny-all — NATS treats "no publish permission at all" as *unrestricted publish* (`buildPermissionsFromJwt`: empty allow + empty deny ⇒ no publish restriction). A subscribe-only user happily published to arbitrary subjects until given `publish: { deny: [">"] }`. **Fixed in this repo:** `UserJwtMinter` now mints an explicit `deny: [">"]` for whichever side's allow list is empty (unit-tested, and proven end to end in `dev/secure-example/`).
 3. **Never grant `_INBOX.>` or any shared inbox root.** Inboxes have no server-side ownership — any subscriber to `_INBOX.>` reads everyone's replies in the account (§2.2, verified live).
 4. **Don't overlap publish and subscribe subjects** in the union unless the subject is intentionally a public channel: overlap = every anon client sees every other's publishes (§2.1).
 5. **No broad wildcards** (`>`, `*.>`) in any `anonymousProfile` — the grant is a union, so one app's mistake becomes every anon connection's permissions (§2.3, §4.4).
@@ -167,7 +167,7 @@ Bottom line: **NATS gives no intra-account privacy except subject permissions.**
 
 ## 7. Secure-by-default configuration example (NATS + NACS)
 
-A complete, minimal starting point: one app (`notes`), pre-authenticated (anonymous) users locked down with **no cross-talk**, and a realistic authenticated profile. The `server.conf` below passes `nats-server -t` on v2.15.3.
+A complete, minimal starting point: one app (`notes`), pre-authenticated (anonymous) users locked down with **no cross-talk**, and a realistic authenticated profile. **This whole section is proven end to end by `dev/secure-example/`** — real nats-server v2.15.3 + real Keycloak 26 + the real `AuthCallout.Host`, with a C# proof app (`Prove.cs`, NATS.Net) asserting 13 delivery-level properties: `RESULT: 13 passed, 0 failed`. The `server.conf` below passes `nats-server -t`.
 
 ### 7.1 NATS `server.conf`
 
@@ -183,11 +183,18 @@ accounts {
 
   # One account per application. Declared empty: the minted user JWT's
   # audience places clients here; membership never lives in this file.
-  NOTES: {}
+  NOTES: {
+    # The one deliberate crack in the account wall: without this export (and the
+    # matching import below), an anon subscriber in ANON can never receive the
+    # notes.public.> broadcasts the backend publishes from inside NOTES — accounts
+    # isolate fully, and the proof run caught exactly this.
+    exports: [ { stream: "notes.public.>" } ]
+  }
 
-  # Anonymous quarantine. No users, no imports, no exports, no JetStream.
+  # Anonymous quarantine. No users, no JetStream; the only import is the public feed.
   # Tight limits bound abuse (all three keys validated against v2.15.3).
   ANON: {
+    imports: [ { stream: { account: NOTES, subject: "notes.public.>" } } ]
     limits: { max_connections: 500, max_subscriptions: 20, max_payload: 16384 }
   }
 }
@@ -205,7 +212,7 @@ authorization {
 What makes it secure by default:
 
 - **No `no_auth_user`** — the callout is the only path for credential-less clients, so a pre-authenticated connection can still authenticate (the server routes its bare CONNECT to `$SYS.REQ.USER.AUTH` and the callout mints the anon grant), but it gets *only* that grant.
-- **No imports into `ANON`** — unlike the dev loop, nothing from `AUTH` (or anywhere) is reachable; the account boundary does its full job.
+- **The only import into `ANON` is the public feed** — a cross-account broadcast requires an explicit export/import pair, which doubles as documentation of the one subject anon clients may legitimately receive. Nothing else from `AUTH`, `NOTES`, or anywhere is reachable.
 - **Every account except `AUTH` is empty** — there are no static passwords anywhere; compromise of this file leaks no credentials (both NKeys are public halves).
 - **`timeout: 3`** keeps half-open unauthenticated sockets short-lived.
 
@@ -258,10 +265,10 @@ anonymousProfile:
 | --- | --- |
 | Anon client A cannot message anon client B | No publish subjects in the union at all |
 | A cannot read B's request replies | No `_INBOX.>`/inbox root granted; anon request-reply is unsupported by design (§4.5) |
-| A cannot reach authenticated apps | Minted into `ANON`; `NOTES` is a different account with no exports |
+| A cannot reach authenticated apps | Minted into `ANON`; `NOTES` is a different account whose only export is the public feed |
 | A cannot exhaust the server | `ANON` account limits + 5m expiry + `timeout: 3` |
 
-> ⚠️ **One repo-level caveat (TL;DR #2):** because the minted JWT currently sets only allow lists, a publish list that ends up *empty* leaves publish unrestricted inside `ANON`. Until `UserJwtMinter` adds `Pub.Deny: [">"]` for empty unions, keep *at least one* app contributing a harmless, subscribe-disjoint publish subject (e.g. `publish: [notes.feedback.anon]`) so the allow list is non-empty — or apply the minter fix, which is the real secure-by-default answer.
+> **Resolved:** `UserJwtMinter` now mints an explicit `deny: [">"]` for whichever side's allow list is empty (with unit tests), so a subscribe-only anon union is genuinely publish-dead. The proof run demonstrates both states: before the fix, an anon client could forge `notes.public.spoof` into other anon clients; after it, that delivery fails while everything legitimate still flows.
 
 ### 7.4 Authenticated users — a realistic profile
 
@@ -297,9 +304,8 @@ profiles:
       azp: [notes-backend]
     nameClaim: azp
     grant:
-      publish:   [notes.*.events.>, "_INBOX.notes.>"]  # respond to any tenant; reply-publish only (weak capability, ADR 0013)
+      publish: [notes.*.events.>, notes.public.>, "_INBOX.notes.>"]  # any tenant's events + the public feed; reply-publish only (weak capability, ADR 0013)
       subscribe: [notes.*.commands.>]
-    autoAddSessionAccess: true    # auto-adds scoped $KV reads + per-principal inbox (ADR 0013)
 ```
 
 Why this is realistic and safe:
@@ -307,4 +313,26 @@ Why this is realistic and safe:
 - **Members** never hold a static account-wide subject: every grant line is templated from their own `household_id`, so tenant A's user physically cannot subscribe to tenant B's events (deny-by-default + no matching allow).
 - `require-safe` rejects token values containing `.` `*` `>` or whitespace, so a hostile claim can't smuggle a wildcard into the subject space.
 - **The backend service** gets cross-tenant `notes.*.commands.>` subscribe (it serves everyone) but its inbox capability is *publish-only* (`_INBOX.notes.>`): it can answer requesters, never read anyone's replies — the asymmetric rule from ADR 0013.
-- **Anonymous ↔ authenticated separation is structural**: members and the backend are minted into `NOTES`, anon into `ANON`. The only overlap is `notes.public.>`, which members can also read — and only the backend (not members, not anon) can publish to, because nobody else has a matching publish allow.
+- **Anonymous ↔ authenticated separation is structural**: members and the backend are minted into `NOTES`, anon into `ANON`. The only overlap is `notes.public.>` (via the explicit account export), which members can also read — and only the backend (not members, not anon) can publish to, because nobody else has a matching publish allow.
+
+### 7.5 Proof run
+
+`dev/secure-example/` runs all of the above for real (see its README for the three `docker run`/host commands plus `dotnet run Prove.cs`). The 13 assertions, all delivery-level (a subscriber either received the message or it didn't — CLI exit codes lie about async violations):
+
+| # | Property | Result |
+| --- | --- | --- |
+| 1 | Two credential-less clients connect; callout mints the anon grant | ✅ |
+| 2 | anon→anon delivery on an arbitrary subject fails | ✅ |
+| 3 | anon→anon forgery into shared `notes.public.>` fails (needs the minter deny fix) | ✅ |
+| 4 | anon cannot receive tenant events | ✅ |
+| 5 | backend→anon `notes.public.>` broadcast IS delivered (account export) | ✅ |
+| 6 | alice receives her own tenant's events | ✅ |
+| 7 | alice's command reaches the backend | ✅ |
+| 8 | alice cannot receive bob's tenant events | ✅ |
+| 9 | alice cannot inject into bob's tenant | ✅ |
+| 10 | full alice→backend→alice flow works | ✅ |
+| 11 | bob observes nothing of alice's flow | ✅ |
+| 12 | garbage token rejected at connect | ✅ |
+| 13 | bob's static `notes.public.>` grant works | ✅ |
+
+Two findings surfaced only because the proof ran against the real stack: the `notes.public.>` account export was missing from the first draft (anon broadcasts silently never arrived), and restarting the NATS container without restarting the host leaves the identity-store KV buckets missing, so the host correctly fails closed and denies authenticated grants until restarted.

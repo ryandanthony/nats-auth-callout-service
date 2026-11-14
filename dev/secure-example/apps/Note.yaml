@@ -1,0 +1,41 @@
+schemaVersion: 1
+# Secure-by-default application file (doc §7.3/§7.4).
+name: notes
+targetAccount: NOTES
+issuer:
+  authority: http://localhost:8903/realms/secure-example
+  jwksCache: 5m
+  validateAudience: true
+  audience: [nats]
+  clockSkew: 60s
+  allowedAlgorithms: [RS256]
+match:
+  azp: [notes-web, notes-backend]
+
+# Anonymous union contribution: subscribe-only, one narrow public prefix.
+anonymousProfile:
+  subscribe: [notes.public.>]
+
+profiles:
+  - name: member
+    match:
+      realm_access.roles: [notes-user]
+    nameClaim: preferred_username
+    variables:
+      - name: tenant
+        claim: household_id
+        required: true
+        transforms: [lowercase, require-safe]
+    publishTemplates: ["notes.{tenant}.commands.>"]
+    subscribeTemplates: ["notes.{tenant}.events.>"]
+    grant:
+      publish: []
+      subscribe: [notes.public.>]
+
+  - name: backend
+    match:
+      azp: [notes-backend]
+    nameClaim: azp
+    grant:
+      publish: [notes.*.events.>, notes.public.>, "_INBOX.notes.>"]
+      subscribe: [notes.*.commands.>]

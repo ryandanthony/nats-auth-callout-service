@@ -60,8 +60,8 @@ public sealed class UserJwtMinter : IUserJwtMinter, IDisposable
         userClaims.Audience = grant.TargetAccount;
         userClaims.Name = grant.Name;
         userClaims.Expires = grant.Expiry;
-        userClaims.User.Pub = new NatsPermission { Allow = [.. grant.Publish] };
-        userClaims.User.Sub = new NatsPermission { Allow = [.. grant.Subscribe] };
+        userClaims.User.Pub = BuildPermission(grant.Publish);
+        userClaims.User.Sub = BuildPermission(grant.Subscribe);
         var userJwt = NatsJwt.EncodeUserClaims(userClaims, _issuerKeyPair);
 
         return EncodeResponse(userNKey, serverId, userJwt, error: null);
@@ -79,6 +79,22 @@ public sealed class UserJwtMinter : IUserJwtMinter, IDisposable
 
     /// <summary>Disposes the underlying issuer key pair.</summary>
     public void Dispose() => _issuerKeyPair.Dispose();
+
+    /// <summary>
+    /// Builds one side's permission from its allow list, substituting an explicit
+    /// <c>deny: ["&gt;"]</c> when the list is empty. An empty allow list is <b>not</b>
+    /// deny-all to nats-server: <c>buildPermissionsFromJwt</c> skips a side whose allow and
+    /// deny are both empty, leaving that side unrestricted — so a subscribe-only grant (for
+    /// example an anonymous union composed solely of <c>anonymousProfile.subscribe</c>
+    /// contributions) would otherwise mint a user that can publish anywhere in its account
+    /// (verified against a real v2.15.3 server; see protecting-anon-access.md).
+    /// </summary>
+    /// <param name="allow">The grant's allow list for this side.</param>
+    /// <returns>The permission: the allow list, or deny-all when it is empty.</returns>
+    private static NatsPermission BuildPermission(IReadOnlyList<string> allow) =>
+        allow.Count > 0
+            ? new NatsPermission { Allow = [.. allow] }
+            : new NatsPermission { Deny = [">"] };
 
     private SignedAuthResponse EncodeResponse(string userNKey, string serverId, string? userJwt, string? error)
     {

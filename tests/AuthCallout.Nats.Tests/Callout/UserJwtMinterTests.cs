@@ -161,6 +161,47 @@ public sealed class UserJwtMinterTests : IDisposable
     }
 
     [Fact]
+    public void MintGrant_EmptyPublishList_MintsExplicitPublishDenyAll()
+    {
+        // An empty allow list is NOT deny-all to nats-server (buildPermissionsFromJwt skips a
+        // side with empty allow+deny, leaving it unrestricted — verified on v2.15.3, see
+        // protecting-anon-access.md). A subscribe-only grant must mint publish deny ">".
+        var grant = CalloutTestBuilders.Granted() with
+        {
+            Publish = [],
+            Subscribe = ["notes.public.>"],
+        };
+        var userNKey = CalloutTestBuilders.NewUserPublicKey();
+
+        var response = _minter.MintGrant(grant, userNKey, "server-1");
+        var outer = NatsJwt.DecodeClaims<NatsAuthorizationResponseClaims>(response.EncodedResponseJwt);
+        var userClaims = NatsJwt.DecodeClaims<NatsUserClaims>(outer.AuthorizationResponse.Jwt);
+
+        Assert.True(userClaims.User.Pub.Allow is null || userClaims.User.Pub.Allow.Count == 0);
+        Assert.Equal([">"], userClaims.User.Pub.Deny);
+        Assert.Equal(["notes.public.>"], userClaims.User.Sub.Allow);
+        Assert.True(userClaims.User.Sub.Deny is null || userClaims.User.Sub.Deny.Count == 0);
+    }
+
+    [Fact]
+    public void MintGrant_EmptySubscribeList_MintsExplicitSubscribeDenyAll()
+    {
+        var grant = CalloutTestBuilders.Granted() with
+        {
+            Publish = ["notes.inbound.>"],
+            Subscribe = [],
+        };
+        var userNKey = CalloutTestBuilders.NewUserPublicKey();
+
+        var response = _minter.MintGrant(grant, userNKey, "server-1");
+        var outer = NatsJwt.DecodeClaims<NatsAuthorizationResponseClaims>(response.EncodedResponseJwt);
+        var userClaims = NatsJwt.DecodeClaims<NatsUserClaims>(outer.AuthorizationResponse.Jwt);
+
+        Assert.Equal(["notes.inbound.>"], userClaims.User.Pub.Allow);
+        Assert.Equal([">"], userClaims.User.Sub.Deny);
+    }
+
+    [Fact]
     public void Constructor_NullOrWhitespaceSeed_Throws()
     {
         Assert.Throws<ArgumentException>(() => new UserJwtMinter(string.Empty));

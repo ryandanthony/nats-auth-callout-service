@@ -1,0 +1,35 @@
+schemaVersion: 1
+# Secure-by-default bootstrap (doc §7.2), adapted for a local mock OIDC issuer.
+natsUrl: nats://localhost:4233
+issuerSeed:
+  kind: file
+  path: .issuer.seed
+serviceUserSeed:
+  kind: file
+  path: .service.seed
+assertionKeys:
+  - kid: example-key-a
+    key:
+      kind: file
+      path: .assertion.seed
+    active: true
+source:
+  kind: files
+  directory: ./apps
+  warnStaleness: 60s
+  maxStaleness: 15m
+  reconnectBackoff: 5s
+jwks:
+  refreshInterval: 5m
+  fetchTimeout: 5s
+  prewarmRequired: true
+  allowInsecureHttp: true   # mock issuer runs on localhost http
+concurrency:
+  maxDegreeOfParallelism: 4
+  perRequestTimeout: 1500ms
+anonymous:
+  targetAccount: ANON
+  expiry: 5m
+  events:
+    success: anon.auth.success
+    failure: anon.auth.failure

@@ -1,0 +1,100 @@
+{
+  "realm": "secure-example",
+  "enabled": true,
+  "accessTokenLifespan": 600,
+  "roles": {
+    "realm": [
+      { "name": "notes-user", "description": "Member of the notes app" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "notes-web",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [],
+      "webOrigins": [],
+      "protocolMappers": [
+        {
+          "name": "nats-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "false",
+            "included.custom.audience": "nats",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "household-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "household_id",
+            "claim.name": "household_id",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "notes-backend",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "secure-example-backend-secret",
+      "protocol": "openid-connect",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "redirectUris": [],
+      "webOrigins": [],
+      "protocolMappers": [
+        {
+          "name": "nats-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "false",
+            "included.custom.audience": "nats",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@example.com",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Example",
+      "credentials": [ { "type": "password", "value": "alice", "temporary": false } ],
+      "realmRoles": [ "notes-user" ],
+      "attributes": { "household_id": ["Fam42"] }
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "email": "bob@example.com",
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "Example",
+      "credentials": [ { "type": "password", "value": "bob", "temporary": false } ],
+      "realmRoles": [ "notes-user" ],
+      "attributes": { "household_id": ["Fam99"] }
+    }
+  ]
+}

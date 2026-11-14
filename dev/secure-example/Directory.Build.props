@@ -1,0 +1,3 @@
+<!-- Stop repo-root build props (analyzers, stylecop) from applying to the example app. -->
+<Project>
+</Project>

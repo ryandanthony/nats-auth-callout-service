@@ -1,0 +1,7 @@
+<!-- Opt the file-based Prove.cs app out of the repo's Central Package Management
+     (its #:package directive carries the version inline). -->
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>
