@@ -177,3 +177,8 @@ global expiry]
   token `exp` to derive one from.
 - Adding or removing an application automatically adds or removes its
   anonymous subjects on the next reload.
+
+See [Securing applications](./securing-applications) for the operational
+rules that keep the anonymous union, account isolation, and cross-account
+exports safe in practice — including a verified server trap around empty
+permission lists.
