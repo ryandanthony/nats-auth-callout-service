@@ -48,6 +48,16 @@ Expected: `RESULT: 24 passed, 0 failed`.
 > store lives in NATS JetStream, and the host fails closed (denies
 > authenticated grants) until its buckets are re-provisioned.
 
+> The NATS server log shows `Subscription Violation - Subject "_INBOX.*"`
+> for the .NET clients: expected and harmless. No profile grants an inbox
+> subject, so the client's default request-reply inbox subscription is
+> denied (doc §4.5 — request-reply needs the private-inbox pattern). Plain
+> pub/sub, which is all this proof uses, is unaffected. Every negative
+> assertion in `Prove.cs` is also corroborated by an explicit
+> `Publish/Subscription Violation` in `docker logs secure-example-nats`,
+> attributed to the right account/user (e.g. `ANON/user:anonymous`,
+> `NOTES/user:alice`, `TASKS/user:carol`).
+
 ## What `Prove.cs` asserts
 
 1. **Pre-authenticated users can authenticate**: two credential-less clients connect (the callout mints the anon grant).
