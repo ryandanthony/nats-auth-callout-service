@@ -2,3 +2,5 @@
 .service.seed
 .assertion.seed
 issuer/rsa.pem
+.host.pid
+host.log
