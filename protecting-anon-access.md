@@ -36,7 +36,7 @@ Anonymous clients all share one account and one permission set, so protection is
 3. **Never grant `_INBOX.>` or any shared inbox root.** Inboxes have no server-side ownership — any subscriber to `_INBOX.>` reads everyone's replies in the account (§2.2, verified live).
 4. **Don't overlap publish and subscribe subjects** in the union unless the subject is intentionally a public channel: overlap = every anon client sees every other's publishes (§2.1).
 5. **No broad wildcards** (`>`, `*.>`) in any `anonymousProfile` — the grant is a union, so one app's mistake becomes every anon connection's permissions (§2.3, §4.4).
-6. **Keep the anon expiry short** (`anonymous.expiry`, e.g. `5m`) so revocation and config changes take effect quickly.
+6. **Keep the anon expiry short** (`anonymous.expiry`, e.g. `5m`) so revocation and config changes take effect quickly. Verified live: the server enforces the minted JWT's expiry on open connections — with a 15s expiry, an anonymous subscriber was disconnected by the server exactly 15s after connect (client saw `Disconnected due to: EOF`), forcing a fresh pass through the callout on reconnect.
 7. **Cap the `ANON` account** in server config (`limits { max_connections, max_subscriptions, max_payload }`) to bound abuse (§3.6).
 8. **If anon request-reply is ever needed**, use per-connection private inboxes: client picks a random ID, sets `inbox_prefix = _INBOX.anon.<id>`, callout sanitizes and mints `subscribe: _INBOX.anon.<id>.>`; responders use `allow_responses` (§5). Until then, anon request-reply stays unsupported by design.
 
