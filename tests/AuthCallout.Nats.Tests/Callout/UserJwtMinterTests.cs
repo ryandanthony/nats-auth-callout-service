@@ -202,6 +202,27 @@ public sealed class UserJwtMinterTests : IDisposable
     }
 
     [Fact]
+    public void MintGrant_BothListsEmpty_MintsDenyAllOnBothSides()
+    {
+        // Defense in depth: the pipeline never produces a both-empty grant (the anonymous
+        // composer denies a zero-subject union, D15), but if one ever reached the minter it
+        // must mint a uselessly-safe user, not an unrestricted one.
+        var grant = CalloutTestBuilders.Granted() with
+        {
+            Publish = [],
+            Subscribe = [],
+        };
+        var userNKey = CalloutTestBuilders.NewUserPublicKey();
+
+        var response = _minter.MintGrant(grant, userNKey, "server-1");
+        var outer = NatsJwt.DecodeClaims<NatsAuthorizationResponseClaims>(response.EncodedResponseJwt);
+        var userClaims = NatsJwt.DecodeClaims<NatsUserClaims>(outer.AuthorizationResponse.Jwt);
+
+        Assert.Equal([">"], userClaims.User.Pub.Deny);
+        Assert.Equal([">"], userClaims.User.Sub.Deny);
+    }
+
+    [Fact]
     public void Constructor_NullOrWhitespaceSeed_Throws()
     {
         Assert.Throws<ArgumentException>(() => new UserJwtMinter(string.Empty));
