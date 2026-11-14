@@ -4,7 +4,14 @@
   "accessTokenLifespan": 600,
   "roles": {
     "realm": [
-      { "name": "notes-user", "description": "Member of the notes app" }
+      {
+        "name": "notes-user",
+        "description": "Member of the notes app"
+      },
+      {
+        "name": "tasks-worker",
+        "description": "Worker in the tasks app"
+      }
     ]
   },
   "clients": [
@@ -71,6 +78,70 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "tasks-cli",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [],
+      "webOrigins": [],
+      "protocolMappers": [
+        {
+          "name": "nats-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "false",
+            "included.custom.audience": "nats",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "team-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "team_id",
+            "claim.name": "team_id",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "tasks-backend",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "secure-example-tasks-secret",
+      "protocol": "openid-connect",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "redirectUris": [],
+      "webOrigins": [],
+      "protocolMappers": [
+        {
+          "name": "nats-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "false",
+            "included.custom.audience": "nats",
+            "access.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "users": [
@@ -81,9 +152,21 @@
       "emailVerified": true,
       "firstName": "Alice",
       "lastName": "Example",
-      "credentials": [ { "type": "password", "value": "alice", "temporary": false } ],
-      "realmRoles": [ "notes-user" ],
-      "attributes": { "household_id": ["Fam42"] }
+      "credentials": [
+        {
+          "type": "password",
+          "value": "alice",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "notes-user"
+      ],
+      "attributes": {
+        "household_id": [
+          "Fam42"
+        ]
+      }
     },
     {
       "username": "bob",
@@ -92,9 +175,44 @@
       "emailVerified": true,
       "firstName": "Bob",
       "lastName": "Example",
-      "credentials": [ { "type": "password", "value": "bob", "temporary": false } ],
-      "realmRoles": [ "notes-user" ],
-      "attributes": { "household_id": ["Fam99"] }
+      "credentials": [
+        {
+          "type": "password",
+          "value": "bob",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "notes-user"
+      ],
+      "attributes": {
+        "household_id": [
+          "Fam99"
+        ]
+      }
+    },
+    {
+      "username": "carol",
+      "enabled": true,
+      "email": "carol@example.com",
+      "emailVerified": true,
+      "firstName": "Carol",
+      "lastName": "Example",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "carol",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "tasks-worker"
+      ],
+      "attributes": {
+        "team_id": [
+          "Ops7"
+        ]
+      }
     }
   ]
 }

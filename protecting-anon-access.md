@@ -317,7 +317,7 @@ Why this is realistic and safe:
 
 ### 7.5 Proof run
 
-`dev/secure-example/` runs all of the above for real (see its README for the three `docker run`/host commands plus `dotnet run Prove.cs`). The 13 assertions, all delivery-level (a subscriber either received the message or it didn't — CLI exit codes lie about async violations):
+`dev/secure-example/` runs all of the above for real, now with a **second application** (`apps/Task.yaml`: own `TASKS` account, same Keycloak realm/issuer, routed by `azp`, team-templated `worker` profile, contributes `tasks.public.>` to the anon union). See its README for the three `docker run`/host commands plus `dotnet run Prove.cs`. The 24 assertions, all delivery-level (a subscriber either received the message or it didn't — CLI exit codes lie about async violations):
 
 | # | Property | Result |
 | --- | --- | --- |
@@ -334,5 +334,18 @@ Why this is realistic and safe:
 | 11 | bob observes nothing of alice's flow | ✅ |
 | 12 | garbage token rejected at connect | ✅ |
 | 13 | bob's static `notes.public.>` grant works | ✅ |
+| 14 | carol (`azp: tasks-cli`, `team_id: Ops7`) receives her team's `tasks.ops7.events.>` | ✅ |
+| 15 | carol's command reaches the tasks backend | ✅ |
+| 16 | carol denied another team's subjects (`tasks.dev1.*`) | ✅ |
+| 17 | alice (notes) cannot receive tasks team events | ✅ |
+| 18 | carol (tasks) cannot receive notes tenant events | ✅ |
+| 19 | carol cannot receive `notes.public.>` (exports go to `ANON` only) | ✅ |
+| 20 | notes backend cannot inject into `tasks.public.>` | ✅ |
+| 21 | tasks backend cannot inject into notes tenants | ✅ |
+| 22 | anon receives `tasks.public.>` (union adds tasks' contribution) | ✅ |
+| 23 | anon still receives `notes.public.>` (union keeps notes' contribution) | ✅ |
+| 24 | anon cannot forge into `tasks.public.>` | ✅ |
+
+The two-app checks (14–24) demonstrate no collision and no leakage between applications sharing one realm, one issuer, and one server: routing is purely `azp`-based, each app lives in its own account whose only export is its public feed into `ANON`, and the anonymous union grows compositionally per ADR 0004 while staying publish-dead.
 
 Two findings surfaced only because the proof ran against the real stack: the `notes.public.>` account export was missing from the first draft (anon broadcasts silently never arrived), and restarting the NATS container without restarting the host leaves the identity-store KV buckets missing, so the host correctly fails closed and denies authenticated grants until restarted.

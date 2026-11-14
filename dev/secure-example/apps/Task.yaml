@@ -1,0 +1,48 @@
+schemaVersion: 1
+# Second application: proves multi-app behavior in the secure-by-default stack.
+# - Same Keycloak realm (issuer block identical to Note.yaml, ADR 0016).
+# - Routed by azp (tasks-cli / tasks-backend vs. notes-web / notes-backend).
+# - Own account (TASKS): a notes token can never yield tasks subjects and
+#   vice versa (ADR 0001: two applications are fully isolated).
+# - Contributes tasks.public.> to the anonymous union (ADR 0004): every anon
+#   connection now gets notes.public.> AND tasks.public.>, minted into ANON.
+name: tasks
+targetAccount: TASKS
+issuer:
+  authority: http://localhost:8903/realms/secure-example
+  jwksCache: 5m
+  validateAudience: true
+  audience: [nats]
+  clockSkew: 60s
+  allowedAlgorithms: [RS256]
+match:
+  azp: [tasks-cli, tasks-backend]
+
+anonymousProfile:
+  subscribe: [tasks.public.>]
+
+profiles:
+  # Human task workers: scoped to their own team via the team_id token claim.
+  - name: worker
+    match:
+      realm_access.roles: [tasks-worker]
+    nameClaim: preferred_username
+    variables:
+      - name: team
+        claim: team_id
+        required: true
+        transforms: [lowercase, require-safe]
+    publishTemplates: ["tasks.{team}.commands.>"]
+    subscribeTemplates: ["tasks.{team}.events.>"]
+    grant:
+      publish: []
+      subscribe: [tasks.public.>]
+
+  # The tasks backend service (client-credentials token).
+  - name: backend
+    match:
+      azp: [tasks-backend]
+    nameClaim: azp
+    grant:
+      publish: [tasks.*.events.>, tasks.public.>, "_INBOX.tasks.>"]
+      subscribe: [tasks.*.commands.>]

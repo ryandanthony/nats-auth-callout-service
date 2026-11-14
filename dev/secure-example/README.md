@@ -2,18 +2,19 @@
 
 Runnable proof of `protecting-anon-access.md` §7: real `nats-server`, real
 Keycloak, the real `AuthCallout.Host`, and a C# single-file proof app
-(`Prove.cs`) that asserts 13 security properties by **actual message
-delivery** (not CLI exit codes — an async permissions violation still looks
-like a successful publish to the client).
+(`Prove.cs`) that asserts 24 security properties across **two applications**
+by **actual message delivery** (not CLI exit codes — an async permissions
+violation still looks like a successful publish to the client).
 
 ## Layout
 
 | File | Purpose |
 | --- | --- |
-| `server.conf` | Secure-by-default NATS config (doc §7.1): `AUTH` + empty `NOTES` + quarantined `ANON` with limits, `auth_callout`, no `no_auth_user`. One deliberate export: `notes.public.>` from `NOTES` into `ANON` so the public feed crosses the account wall. |
+| `server.conf` | Secure-by-default NATS config (doc §7.1): `AUTH` + per-app `NOTES`/`TASKS` + quarantined `ANON` with limits, `auth_callout`, no `no_auth_user`. Each app account's only export is its public feed (`notes.public.>` / `tasks.public.>`) into `ANON`. |
 | `bootstrap.yaml` | NACS bootstrap (doc §7.2): anon → `ANON`, 5m expiry, files source, `allowInsecureHttp` for the local Keycloak. |
-| `apps/Note.yaml` | The `notes` application (doc §7.3/§7.4): subscribe-only `anonymousProfile`, tenant-templated `member` profile, `azp`-matched `backend` profile. |
-| `realm/secure-example-realm.json` | Keycloak realm: clients `notes-web` (public, password grant) and `notes-backend` (client credentials); users `alice` (household `Fam42`) and `bob` (`Fam99`) with the `notes-user` role and a `household_id` attribute mapper. |
+| `apps/Note.yaml` | First application (doc §7.3/§7.4): subscribe-only `anonymousProfile`, tenant-templated `member` profile (`household_id`), `azp`-matched `backend` profile. |
+| `apps/Task.yaml` | Second application: same issuer, routed by `azp` (`tasks-cli`/`tasks-backend`), own `TASKS` account, team-templated `worker` profile (`team_id`), contributes `tasks.public.>` to the anon union (ADR 0004). |
+| `realm/secure-example-realm.json` | Keycloak realm: clients `notes-web`, `notes-backend`, `tasks-cli`, `tasks-backend`; users `alice` (household `Fam42`), `bob` (`Fam99`), `carol` (team `Ops7`). |
 | `Prove.cs` | .NET 10 file-based proof app (NATS.Net). `dotnet run Prove.cs`. |
 | `.issuer.seed` `.service.seed` `.assertion.seed` | Throwaway NKeys, gitignored. Regenerate with `nats auth nkey gen account/user` and update the two public keys in `server.conf`. |
 
@@ -41,7 +42,7 @@ AUTHCALLOUT_BOOTSTRAP_PATH="$PWD/bootstrap.yaml" ASPNETCORE_URLS=http://localhos
 dotnet run Prove.cs
 ```
 
-Expected: `RESULT: 13 passed, 0 failed`.
+Expected: `RESULT: 24 passed, 0 failed`.
 
 > If you restart the NATS container, restart the host too: the KV identity
 > store lives in NATS JetStream, and the host fails closed (denies
@@ -55,6 +56,9 @@ Expected: `RESULT: 13 passed, 0 failed`.
 4. **Tenant isolation**: alice can neither receive nor inject into bob's `fam99` subjects.
 5. **End-to-end**: alice → backend → alice flows while bob observes nothing.
 6. **Edge cases**: a garbage token is rejected at connect; bob's static `notes.public.>` grant works.
+7. **Second app routes without collision**: carol (`azp: tasks-cli`, `team_id: Ops7`) gets `tasks.ops7.*` subjects in `TASKS`; her commands reach the tasks backend; other teams are denied.
+8. **No cross-application leakage**: notes principals can't observe tasks traffic or vice versa (including each other's public feeds — the exports go to `ANON` only), and neither backend can inject into the other app's subjects.
+9. **Anon union spans both apps (ADR 0004)**: anon receives `notes.public.>` *and* `tasks.public.>`, and can forge into neither.
 
 All ports (4233 NATS, 8903 Keycloak, 8907 health) are non-default to avoid
 colliding with the dev AppHost loops and local deploy stacks.

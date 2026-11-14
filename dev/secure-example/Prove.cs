@@ -159,6 +159,44 @@ catch (Exception)
 Check("bob can use the static notes.public.> grant",
     await Delivered(bob, "notes.public.>", backend, "notes.public.greetings", "hi all"));
 
+Console.WriteLine("== 7. Second application (tasks): routing without collision ==");
+// Same realm, same issuer — routing is purely by azp. carol's token (azp tasks-cli,
+// role tasks-worker, team_id Ops7) must land in the TASKS account with tasks subjects.
+var carolToken = await PasswordToken("tasks-cli", "carol", "carol");        // team Ops7 -> tasks.ops7.*
+var tasksBackendToken = await ClientCredentialsToken("tasks-backend", "secure-example-tasks-secret");
+await using var carol = Client(carolToken);
+await using var tasksBackend = Client(tasksBackendToken);
+await carol.ConnectAsync();
+await tasksBackend.ConnectAsync();
+Check("carol receives her team's events (tasks app routed correctly)",
+    await Delivered(carol, "tasks.ops7.events.>", tasksBackend, "tasks.ops7.events.created", "task-1"));
+Check("carol's team command reaches the tasks backend",
+    await Delivered(tasksBackend, "tasks.*.commands.>", carol, "tasks.ops7.commands.create", "new-task"));
+Check("carol CANNOT reach another team's subjects (sub tasks.dev1 denied)",
+    !await Delivered(carol, "tasks.dev1.events.>", tasksBackend, "tasks.dev1.events.created", "dev1-task"));
+
+Console.WriteLine("== 8. No leakage between the two applications ==");
+// Account boundary: a notes principal can never observe tasks traffic and vice versa,
+// even though both apps share one Keycloak realm and one NATS server.
+Check("alice (notes) CANNOT receive tasks team events",
+    !await Delivered(alice, "tasks.ops7.events.>", tasksBackend, "tasks.ops7.events.created", "leak-1"));
+Check("carol (tasks) CANNOT receive notes tenant events",
+    !await Delivered(carol, "notes.fam42.events.>", backend, "notes.fam42.events.created", "leak-2"));
+Check("carol (tasks) CANNOT receive notes.public.> (export goes to ANON only)",
+    !await Delivered(carol, "notes.public.>", backend, "notes.public.announcements", "leak-3"));
+Check("notes backend CANNOT inject into tasks.public.> (cross-app publish leak)",
+    !await Delivered(carol, "tasks.public.>", backend, "tasks.public.hack", "leak-4"));
+Check("tasks backend CANNOT inject into notes tenants",
+    !await Delivered(alice, "notes.fam42.events.>", tasksBackend, "notes.fam42.events.created", "leak-5"));
+
+Console.WriteLine("== 9. Anonymous union spans both applications (ADR 0004) ==");
+Check("anon receives tasks.public.> broadcasts (tasks' union contribution)",
+    await Delivered(anonA, "tasks.public.>", tasksBackend, "tasks.public.status", "all green"));
+Check("anon still receives notes.public.> broadcasts (union keeps notes' contribution)",
+    await Delivered(anonA, "notes.public.>", backend, "notes.public.announcements", "still works"));
+Check("anon cannot forge into tasks.public.> either",
+    !await Delivered(anonB, "tasks.public.>", anonA, "tasks.public.spoof", "forged-task"));
+
 Console.WriteLine();
 Console.WriteLine($"RESULT: {pass} passed, {fail} failed");
 return fail == 0 ? 0 : 1;
