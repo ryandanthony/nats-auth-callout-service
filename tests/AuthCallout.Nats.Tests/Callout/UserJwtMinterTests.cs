@@ -165,7 +165,7 @@ public sealed class UserJwtMinterTests : IDisposable
     {
         // An empty allow list is NOT deny-all to nats-server (buildPermissionsFromJwt skips a
         // side with empty allow+deny, leaving it unrestricted — verified on v2.15.3, see
-        // protecting-anon-access.md). A subscribe-only grant must mint publish deny ">".
+        // dev/secure-example). A subscribe-only grant must mint publish deny ">".
         var grant = CalloutTestBuilders.Granted() with
         {
             Publish = [],

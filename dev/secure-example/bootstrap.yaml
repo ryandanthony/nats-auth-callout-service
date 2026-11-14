@@ -1,5 +1,5 @@
 schemaVersion: 1
-# Secure-by-default bootstrap (doc §7.2), adapted for a local mock OIDC issuer.
+# Secure-by-default bootstrap (see README.md), adapted for the local Keycloak dev issuer.
 natsUrl: nats://localhost:4233
 issuerSeed:
   kind: file

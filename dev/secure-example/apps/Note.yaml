@@ -1,5 +1,5 @@
 schemaVersion: 1
-# Secure-by-default application file (doc §7.3/§7.4).
+# Secure-by-default application file (see README.md and the securing-applications guide).
 name: notes
 targetAccount: NOTES
 issuer:

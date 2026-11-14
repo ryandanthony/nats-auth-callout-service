@@ -1,6 +1,8 @@
 # secure-example — proof of the secure-by-default configuration
 
-Runnable proof of `protecting-anon-access.md` §7: real `nats-server`, real
+Runnable proof of the secure-by-default configuration from the
+[securing-applications guide](../../docs-site/docs/guides/securing-applications.md):
+real `nats-server`, real
 Keycloak, the real `AuthCallout.Host`, and a C# single-file proof app
 (`Prove.cs`) that asserts 24 security properties across **two applications**
 by **actual message delivery** (not CLI exit codes — an async permissions
@@ -10,9 +12,9 @@ violation still looks like a successful publish to the client).
 
 | File | Purpose |
 | --- | --- |
-| `server.conf` | Secure-by-default NATS config (doc §7.1): `AUTH` + per-app `NOTES`/`TASKS` + quarantined `ANON` with limits, `auth_callout`, no `no_auth_user`. Each app account's only export is its public feed (`notes.public.>` / `tasks.public.>`) into `ANON`. |
-| `bootstrap.yaml` | NACS bootstrap (doc §7.2): anon → `ANON`, 5m expiry, files source, `allowInsecureHttp` for the local Keycloak. |
-| `apps/Note.yaml` | First application (doc §7.3/§7.4): subscribe-only `anonymousProfile`, tenant-templated `member` profile (`household_id`), `azp`-matched `backend` profile. |
+| `server.conf` | Secure-by-default NATS config: `AUTH` + per-app `NOTES`/`TASKS` + quarantined `ANON` with limits, `auth_callout`, no `no_auth_user`. Each app account's only export is its public feed (`notes.public.>` / `tasks.public.>`) into `ANON`. |
+| `bootstrap.yaml` | NACS bootstrap: anon → `ANON`, 5m expiry, files source, `allowInsecureHttp` for the local Keycloak. |
+| `apps/Note.yaml` | First application: subscribe-only `anonymousProfile`, tenant-templated `member` profile (`household_id`), `azp`-matched `backend` profile. |
 | `apps/Task.yaml` | Second application: same issuer, routed by `azp` (`tasks-cli`/`tasks-backend`), own `TASKS` account, team-templated `worker` profile (`team_id`), contributes `tasks.public.>` to the anon union (ADR 0004). |
 | `realm/secure-example-realm.json` | Keycloak realm: clients `notes-web`, `notes-backend`, `tasks-cli`, `tasks-backend`; users `alice` (household `Fam42`), `bob` (`Fam99`), `carol` (team `Ops7`). |
 | `Prove.cs` | .NET 10 file-based proof app (NATS.Net). `dotnet run Prove.cs`. |
@@ -51,7 +53,7 @@ Expected: `RESULT: 24 passed, 0 failed`.
 > The NATS server log shows `Subscription Violation - Subject "_INBOX.*"`
 > for the .NET clients: expected and harmless. No profile grants an inbox
 > subject, so the client's default request-reply inbox subscription is
-> denied (doc §4.5 — request-reply needs the private-inbox pattern). Plain
+> denied (request-reply inside a shared account needs the private-inbox pattern: custom `inbox_prefix` + a scoped `_INBOX.<x>.>` subscribe grant). Plain
 > pub/sub, which is all this proof uses, is unaffected. Every negative
 > assertion in `Prove.cs` is also corroborated by an explicit
 > `Publish/Subscription Violation` in `docker logs secure-example-nats`,

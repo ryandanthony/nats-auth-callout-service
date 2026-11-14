@@ -87,7 +87,8 @@ public sealed class UserJwtMinter : IUserJwtMinter, IDisposable
     /// deny are both empty, leaving that side unrestricted — so a subscribe-only grant (for
     /// example an anonymous union composed solely of <c>anonymousProfile.subscribe</c>
     /// contributions) would otherwise mint a user that can publish anywhere in its account
-    /// (verified against a real v2.15.3 server; see protecting-anon-access.md).
+    /// (verified against a real v2.15.3 server; see the securing-applications guide and
+    /// <c>dev/secure-example</c>).
     /// </summary>
     /// <param name="allow">The grant's allow list for this side.</param>
     /// <returns>The permission: the allow list, or deny-all when it is empty.</returns>

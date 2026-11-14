@@ -1,4 +1,5 @@
-// Proof app for the secure-by-default configuration (protecting-anon-access.md §7).
+// Proof app for the secure-by-default configuration (see README.md and the
+// securing-applications guide in docs-site/docs/guides/).
 // .NET 10 file-based app: `dotnet run Prove.cs` (stack must be running, see README.md).
 //
 // Unlike CLI smoke tests, every check here is a *delivery* check: a publish that the
