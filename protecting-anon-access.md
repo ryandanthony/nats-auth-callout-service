@@ -4,13 +4,40 @@
 
 Anonymous clients all share one account and one permission set, so protection is entirely about what the minted grant contains. Do this:
 
-1. **Quarantine them in a dedicated account.** Keep `anonymous.targetAccount` pointing at an account (`ANON`) used for nothing else — no services, no JetStream assets, no users. The account boundary blocks everything outside it (§3.1).
+1. **Quarantine them in a dedicated account.** Keep `anonymous.targetAccount` pointing at an account (`ANON`) used for nothing else — no services, no JetStream assets, no users. The account boundary blocks everything outside it (§3.1). Example:
+
+   ```yaml
+   # bootstrap.yaml — the callout mints every anonymous connection into ANON
+   anonymous:
+     targetAccount: ANON
+     expiry: 5m
+   ```
+
+   ```conf
+   # server.conf — ANON exists only as an empty quarantine account.
+   # No users (the callout's minted JWT places clients here via its audience),
+   # no exports, no JetStream, nothing shared with NOTES/TASKS/AUTH.
+   accounts {
+     AUTH: {
+       users: [ { nkey: U...CALLOUT_SERVICE_USER } ]
+     }
+     NOTES: { ... }
+     TASKS: { ... }
+     ANON: {
+       # empty on purpose — isolation comes from having nothing in here
+       limits: { max_connections: 1000, max_subscriptions: 50, max_payload: 65536 }
+     }
+   }
+   ```
+
+   Anti-example: the dev loop's `server.conf` imports `$JS.API.>` / `$KV.>` from `AUTH` into `ANON` (a dev-only workaround). That import weakens the account boundary — only the minted grant's lack of those subjects keeps anon clients out (§2.4). A production `ANON` should have **no imports at all**.
+
 2. **Keep the grant subscribe-only wherever possible.** Contribute only genuinely public broadcast subjects to `anonymousProfile` (e.g. `subscribe: [notes.public.>]`). Anon clients that cannot publish cannot message each other at all (§4.1).
 3. **Never grant `_INBOX.>` or any shared inbox root.** Inboxes have no server-side ownership — any subscriber to `_INBOX.>` reads everyone's replies in the account (§2.2, verified live).
 4. **Don't overlap publish and subscribe subjects** in the union unless the subject is intentionally a public channel: overlap = every anon client sees every other's publishes (§2.1).
 5. **No broad wildcards** (`>`, `*.>`) in any `anonymousProfile` — the grant is a union, so one app's mistake becomes every anon connection's permissions (§2.3, §4.4).
 6. **Keep the anon expiry short** (`anonymous.expiry`, e.g. `5m`) so revocation and config changes take effect quickly.
-7. **Cap the `ANON` account** in server config (`limits { conn, max_subscriptions, payload }`) to bound abuse (§3.6).
+7. **Cap the `ANON` account** in server config (`limits { max_connections, max_subscriptions, max_payload }`) to bound abuse (§3.6).
 8. **If anon request-reply is ever needed**, use per-connection private inboxes: client picks a random ID, sets `inbox_prefix = _INBOX.anon.<id>`, callout sanitizes and mints `subscribe: _INBOX.anon.<id>.>`; responders use `allow_responses` (§5). Until then, anon request-reply stays unsupported by design.
 
 Everything below is the research and evidence behind these rules.
@@ -100,7 +127,7 @@ Without auth callout, the server-config way to handle credential-less clients is
 
 ### 3.6 Account limits (DoS containment)
 
-Accounts support limits (max connections, payload, subscriptions). Capping `ANON` (e.g. `limits { conn: ... }` on the account in server config) bounds the blast radius of anonymous abuse. Orthogonal to visibility, but part of protecting anon access. Per the v2 reference, the per-account `max_subscriptions` under `accounts` **is** hot-reloadable and re-applies to already-connected clients (one exceeding the new limit is disconnected with `MaxSubscriptionsExceeded`); the effective value is `min(account limit, server max_subscriptions)`. Note the top-level `max_subscriptions` (per-client) is a different key and is *not* reloadable.
+Accounts support limits (max connections, payload, subscriptions). Capping `ANON` (e.g. `limits { max_connections: ... }` on the account in server config — keys are `max_connections` / `max_subscriptions` / `max_payload`, validated with `nats-server -t` on v2.15.3) bounds the blast radius of anonymous abuse. Orthogonal to visibility, but part of protecting anon access. Per the v2 reference, the per-account `max_subscriptions` under `accounts` **is** hot-reloadable and re-applies to already-connected clients (one exceeding the new limit is disconnected with `MaxSubscriptionsExceeded`); the effective value is `min(account limit, server max_subscriptions)`. Note the top-level `max_subscriptions` (per-client) is a different key and is *not* reloadable.
 
 ## 4. Rules for `anonymousProfile` authors (current model)
 
