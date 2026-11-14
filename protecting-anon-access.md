@@ -164,3 +164,147 @@ Collisions are possible (client-chosen IDs), but a colliding client can only rec
 | Account limits | Anon resource abuse | ⚠️ not set on `ANON`; worth adding in server config |
 
 Bottom line: **NATS gives no intra-account privacy except subject permissions.** Anonymous clients are kept from seeing each other by (a) being quarantined in `ANON`, (b) a deny-by-default minted grant that contains only the explicit `anonymousProfile` union, and (c) never granting shared inbox or overlapping pub/sub subjects to that union. The private-inbox pattern is the documented path if per-anon-connection request-reply is ever needed.
+
+## 7. Secure-by-default configuration example (NATS + NACS)
+
+A complete, minimal starting point: one app (`notes`), pre-authenticated (anonymous) users locked down with **no cross-talk**, and a realistic authenticated profile. The `server.conf` below passes `nats-server -t` on v2.15.3.
+
+### 7.1 NATS `server.conf`
+
+```conf
+port: 4222
+
+accounts {
+  # The callout service's own account. Nothing else lives here.
+  AUTH: {
+    users: [ { nkey: UBSMQROM3HYWT3NULVSSGNQGIVUYCGDVTOKZYIYTQSPVGAHKMF4D3IWY } ]  # serviceUserSeed public key
+    jetstream: enabled   # identity-store KV buckets (ADR 0013) live here
+  }
+
+  # One account per application. Declared empty: the minted user JWT's
+  # audience places clients here; membership never lives in this file.
+  NOTES: {}
+
+  # Anonymous quarantine. No users, no imports, no exports, no JetStream.
+  # Tight limits bound abuse (all three keys validated against v2.15.3).
+  ANON: {
+    limits: { max_connections: 500, max_subscriptions: 20, max_payload: 16384 }
+  }
+}
+
+authorization {
+  timeout: 3   # pre-auth clients must finish CONNECT within this window
+  auth_callout {
+    issuer: "AA7YGMNUDH3477U77LWTBMYZXKWN2FWLZ5AWAAATYZZNTYC2QZEN6KZA"   # issuerSeed public key
+    account: AUTH
+    auth_users: [ "UBSMQROM3HYWT3NULVSSGNQGIVUYCGDVTOKZYIYTQSPVGAHKMF4D3IWY" ]
+  }
+}
+```
+
+What makes it secure by default:
+
+- **No `no_auth_user`** — the callout is the only path for credential-less clients, so a pre-authenticated connection can still authenticate (the server routes its bare CONNECT to `$SYS.REQ.USER.AUTH` and the callout mints the anon grant), but it gets *only* that grant.
+- **No imports into `ANON`** — unlike the dev loop, nothing from `AUTH` (or anywhere) is reachable; the account boundary does its full job.
+- **Every account except `AUTH` is empty** — there are no static passwords anywhere; compromise of this file leaks no credentials (both NKeys are public halves).
+- **`timeout: 3`** keeps half-open unauthenticated sockets short-lived.
+
+### 7.2 NACS `bootstrap.yaml` (anonymous settings)
+
+```yaml
+schemaVersion: 1
+natsUrl: nats://nats:4222
+issuerSeed:      { kind: env, name: NACS_ISSUER_SEED }       # signs minted JWTs
+serviceUserSeed: { kind: env, name: NACS_SERVICE_USER_SEED } # callout's own connection
+source:
+  kind: files
+  directory: /config/apps
+anonymous:
+  targetAccount: ANON   # must match the empty quarantine account above
+  expiry: 5m            # short: anon grants age out quickly
+  events:
+    success: anon.auth.success   # emitted on the service's AUTH connection
+    failure: anon.auth.failure
+```
+
+### 7.3 Application file — anonymous contribution with no cross-talk
+
+```yaml
+# /config/apps/Note.yaml
+schemaVersion: 1
+name: notes
+targetAccount: NOTES
+issuer:
+  authority: https://keycloak.example.com/realms/prod
+  jwksCache: 5m
+  validateAudience: true
+  audience: [nats]
+  clockSkew: 60s
+  allowedAlgorithms: [RS256]
+match:
+  azp: [notes-web]
+
+# Anonymous union contribution: SUBSCRIBE-ONLY, one narrow public prefix.
+# - no publish        -> anon clients cannot send anything to each other
+# - no _INBOX.*       -> no reply snooping surface
+# - no wildcard roots -> notes.public.> is the entire anon world
+anonymousProfile:
+  subscribe: [notes.public.>]
+```
+
+**No-cross-talk checklist for the anon union** (each verified in §TL;DR tests):
+
+| Property | Why it holds here |
+| --- | --- |
+| Anon client A cannot message anon client B | No publish subjects in the union at all |
+| A cannot read B's request replies | No `_INBOX.>`/inbox root granted; anon request-reply is unsupported by design (§4.5) |
+| A cannot reach authenticated apps | Minted into `ANON`; `NOTES` is a different account with no exports |
+| A cannot exhaust the server | `ANON` account limits + 5m expiry + `timeout: 3` |
+
+> ⚠️ **One repo-level caveat (TL;DR #2):** because the minted JWT currently sets only allow lists, a publish list that ends up *empty* leaves publish unrestricted inside `ANON`. Until `UserJwtMinter` adds `Pub.Deny: [">"]` for empty unions, keep *at least one* app contributing a harmless, subscribe-disjoint publish subject (e.g. `publish: [notes.feedback.anon]`) so the allow list is non-empty — or apply the minter fix, which is the real secure-by-default answer.
+
+### 7.4 Authenticated users — a realistic profile
+
+The same `Note.yaml` continues with profiles for real users and services. Tokens come from Keycloak; routing is by `iss` + `azp`, permissions by role claims; per-tenant subjects are templated from token claims (ADR 0009):
+
+```yaml
+# /config/apps/Note.yaml (continued)
+identityPropagation:
+  enabled: true
+events:
+  success: notes.events.auth.success
+  failure: notes.events.auth.failure
+profiles:
+  # Human users of the notes web app: scoped to their own household/tenant.
+  - name: member
+    match:
+      realm_access.roles: [notes-user]
+    nameClaim: preferred_username
+    variables:
+      - name: tenant
+        claim: household_id
+        required: true            # token without a tenant claim -> deny
+        transforms: [lowercase, require-safe]
+    publishTemplates:   [notes.{tenant}.commands.>]
+    subscribeTemplates: [notes.{tenant}.events.>]
+    grant:
+      publish: []                      # no static publish — everything is tenant-templated
+      subscribe: [notes.public.>]      # the only static subject: the public broadcast feed
+
+  # The notes backend service (client-credentials token, matched on azp).
+  - name: backend
+    match:
+      azp: [notes-backend]
+    nameClaim: azp
+    grant:
+      publish:   [notes.*.events.>, "_INBOX.notes.>"]  # respond to any tenant; reply-publish only (weak capability, ADR 0013)
+      subscribe: [notes.*.commands.>]
+    autoAddSessionAccess: true    # auto-adds scoped $KV reads + per-principal inbox (ADR 0013)
+```
+
+Why this is realistic and safe:
+
+- **Members** never hold a static account-wide subject: every grant line is templated from their own `household_id`, so tenant A's user physically cannot subscribe to tenant B's events (deny-by-default + no matching allow).
+- `require-safe` rejects token values containing `.` `*` `>` or whitespace, so a hostile claim can't smuggle a wildcard into the subject space.
+- **The backend service** gets cross-tenant `notes.*.commands.>` subscribe (it serves everyone) but its inbox capability is *publish-only* (`_INBOX.notes.>`): it can answer requesters, never read anyone's replies — the asymmetric rule from ADR 0013.
+- **Anonymous ↔ authenticated separation is structural**: members and the backend are minted into `NOTES`, anon into `ANON`. The only overlap is `notes.public.>`, which members can also read — and only the backend (not members, not anon) can publish to, because nobody else has a matching publish allow.
