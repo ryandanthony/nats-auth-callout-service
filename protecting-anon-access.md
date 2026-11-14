@@ -6,8 +6,28 @@ the box, and the rules this service (and `anonymousProfile` authors) must
 follow.
 
 Status: research notes + working guidance. Sources: NATS docs
-(`nats-io/nats.docs`), NATS by Example (auth section), and this repo's ADRs
-(0004, 0013) and design docs (02, 03).
+(`nats-io/nats.docs`), the versioned reference (`nats-io/nats.docs.v2`,
+cross-checked for 2.11–2.15), NATS by Example (auth section), and this
+repo's ADRs (0004, 0013) and design docs (02, 03).
+
+Every server-behavior claim below was **verified empirically** (2026-11-14,
+`nats-server` v2.15.3 in Docker, `nats` CLI 0.4.0) with an `ANON`/`OTHER`
+accounts config mirroring this deployment:
+
+1. Shared-subject echo: two same-account users with overlapping pub/sub on
+   `chat.lobby` see each other's messages. ✔
+2. Deny-by-default: a publish-only grant on `notes.inbound.>` rejects the
+   matching subscribe (`Permissions Violation for Subscription`). ✔
+3. Account isolation: a `>`-privileged user in `OTHER` never receives `ANON`
+   traffic. ✔
+4. Private inbox: `--inbox-prefix _INBOX.anon.joe` + `subscribe:
+   _INBOX.anon.joe.>` completes request-reply end to end. ✔
+5. The same user is denied `subscribe _INBOX.>`. ✔
+6. ...and denied another user's prefix (`_INBOX.anon.pam.>`). ✔
+7. Inbox snooping: a user granted `subscribe: _INBOX.>` receives *another
+   user's* reply traffic verbatim. ✔
+8. `allow_responses: true` lets a responder publish only reply subjects —
+   an explicit publish to any other subject is a Publish Violation. ✔
 
 ---
 
@@ -15,9 +35,17 @@ Status: research notes + working guidance. Sources: NATS docs
 
 With `auth_callout` configured, **every** client connection (including ones
 presenting no credentials at all) is routed through `$SYS.REQ.USER.AUTH` to
-this service — the only exception is the callout's own `auth_users`. There is
-no unauthenticated side door: an anonymous client only gets whatever the
-minted user JWT says.
+this service — the only exception is the callout's own `auth_users` (the
+v2 reference: "All client connections requiring authentication will have
+their credentials pass-through" to the callout; with the block present,
+server-side user lists are not consulted). There is no unauthenticated side
+door: an anonymous client only gets whatever the minted user JWT says.
+
+Operational caveat (v2 reference, 2.11–2.15): the `auth_callout` block is
+**not config-reloadable** — any change to it (including adding/removing it)
+aborts the *entire* `nats-server --signal reload` with "config reload not
+supported for AuthCallout", discarding every other change in the file. Plan
+callout config changes as server restarts.
 
 Per ADR 0004 / `AnonymousComposer` (doc 03, Stage 0):
 
@@ -122,8 +150,16 @@ Without auth callout, the server-config way to handle credential-less clients
 is `no_auth_user: <user>`: unauthenticated connections are bound to a named
 user (in some account) whose permissions then apply. Notes from the docs:
 
-- Doesn't work with nkeys or bcrypted passwords.
+- Doesn't work with nkeys or bcrypted passwords; the referenced user must be
+  defined in the `authorization` or `accounts` block.
 - The client must still complete the CONNECT handshake (auth timeout applies).
+- Reload semantics (v2 reference): *removing* `no_auth_user` reloads;
+  *setting or changing* it fails the reload.
+- One wording trap in the newer docs: the request-reply learn page says the
+  client "owns" the `_INBOX.` namespace. That is only a subject-collision
+  reservation, **not** a security boundary — verified live (§2 item 2 / test
+  T7 above): a same-account user granted `subscribe: _INBOX.>` reads other
+  clients' replies.
 - **Not relevant to our deployment**: with `auth_callout` configured, the
   callout handles credential-less connections itself, which is strictly
   better — we get a per-connection minted JWT, expiry, and events. Keep
@@ -134,7 +170,12 @@ user (in some account) whose permissions then apply. Notes from the docs:
 Accounts support limits (max connections, payload, subscriptions). Capping
 `ANON` (e.g. `limits { conn: ... }` on the account in server config) bounds
 the blast radius of anonymous abuse. Orthogonal to visibility, but part of
-protecting anon access.
+protecting anon access. Per the v2 reference, the per-account
+`max_subscriptions` under `accounts` **is** hot-reloadable and re-applies to
+already-connected clients (one exceeding the new limit is disconnected with
+`MaxSubscriptionsExceeded`); the effective value is
+`min(account limit, server max_subscriptions)`. Note the top-level
+`max_subscriptions` (per-client) is a different key and is *not* reloadable.
 
 ## 4. Rules for `anonymousProfile` authors (current model)
 
