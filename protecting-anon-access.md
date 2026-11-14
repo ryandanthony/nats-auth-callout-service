@@ -1,5 +1,22 @@
 # Protecting anonymous (pre-JWT) access
 
+## How to protect anon traffic (TL;DR)
+
+Anonymous clients all share one account and one permission set, so protection is entirely about what the minted grant contains. Do this:
+
+1. **Quarantine them in a dedicated account.** Keep `anonymous.targetAccount` pointing at an account (`ANON`) used for nothing else — no services, no JetStream assets, no users. The account boundary blocks everything outside it (§3.1).
+2. **Keep the grant subscribe-only wherever possible.** Contribute only genuinely public broadcast subjects to `anonymousProfile` (e.g. `subscribe: [notes.public.>]`). Anon clients that cannot publish cannot message each other at all (§4.1).
+3. **Never grant `_INBOX.>` or any shared inbox root.** Inboxes have no server-side ownership — any subscriber to `_INBOX.>` reads everyone's replies in the account (§2.2, verified live).
+4. **Don't overlap publish and subscribe subjects** in the union unless the subject is intentionally a public channel: overlap = every anon client sees every other's publishes (§2.1).
+5. **No broad wildcards** (`>`, `*.>`) in any `anonymousProfile` — the grant is a union, so one app's mistake becomes every anon connection's permissions (§2.3, §4.4).
+6. **Keep the anon expiry short** (`anonymous.expiry`, e.g. `5m`) so revocation and config changes take effect quickly.
+7. **Cap the `ANON` account** in server config (`limits { conn, max_subscriptions, payload }`) to bound abuse (§3.6).
+8. **If anon request-reply is ever needed**, use per-connection private inboxes: client picks a random ID, sets `inbox_prefix = _INBOX.anon.<id>`, callout sanitizes and mints `subscribe: _INBOX.anon.<id>.>`; responders use `allow_responses` (§5). Until then, anon request-reply stays unsupported by design.
+
+Everything below is the research and evidence behind these rules.
+
+---
+
 How we keep anonymous NATS connections — clients that connect **before/without a bearer token** — from seeing each other's traffic, what NATS gives us out of the box, and the rules this service (and `anonymousProfile` authors) must follow.
 
 Status: research notes + working guidance. Sources: NATS docs (`nats-io/nats.docs`), the versioned reference (`nats-io/nats.docs.v2`, cross-checked for 2.11–2.15), NATS by Example (auth section), and this repo's ADRs (0004, 0013) and design docs (02, 03).
