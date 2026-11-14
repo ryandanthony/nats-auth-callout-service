@@ -14,23 +14,25 @@ Anonymous clients all share one account and one permission set, so protection is
    ```
 
    ```conf
-   # server.conf — ANON exists only as an empty quarantine account.
+   # server.conf — ANON exists only as a quarantine account.
    # No users (the callout's minted JWT places clients here via its audience),
-   # no exports, no JetStream, nothing shared with NOTES/TASKS/AUTH.
+   # no JetStream; its only import is each app's deliberately exported public feed.
    accounts {
      AUTH: {
        users: [ { nkey: U...CALLOUT_SERVICE_USER } ]
      }
-     NOTES: { ... }
+     NOTES: {
+       exports: [ { stream: "notes.public.>" } ]   # the one public broadcast feed
+     }
      TASKS: { ... }
      ANON: {
-       # empty on purpose — isolation comes from having nothing in here
+       imports: [ { stream: { account: NOTES, subject: "notes.public.>" } } ]
        limits: { max_connections: 1000, max_subscriptions: 50, max_payload: 65536 }
      }
    }
    ```
 
-   Anti-example: the dev loop's `server.conf` imports `$JS.API.>` / `$KV.>` from `AUTH` into `ANON` (a dev-only workaround). That import weakens the account boundary — only the minted grant's lack of those subjects keeps anon clients out (§2.4). A production `ANON` should have **no imports at all**.
+   Anti-example: the dev loop's `server.conf` imports `$JS.API.>` / `$KV.>` from `AUTH` into `ANON` (a dev-only workaround). That import weakens the account boundary — only the minted grant's lack of those subjects keeps anon clients out (§2.4). A production `ANON` should import **nothing except deliberately exported public broadcast feeds** (see §7.1: a `notes.public.>` stream export/import is the one legitimate crack in the wall — without it anon subscribers can never receive broadcasts published from inside an app account).
 
 2. **Keep the grant subscribe-only wherever possible — and the minter now denies publish explicitly.** Contribute only genuinely public broadcast subjects to `anonymousProfile` (e.g. `subscribe: [notes.public.>]`). Anon clients that cannot publish cannot message each other at all (§4.1). **Trap (verified live, v2.15.3):** an *empty or omitted* publish list is **not** deny-all — NATS treats "no publish permission at all" as *unrestricted publish* (`buildPermissionsFromJwt`: empty allow + empty deny ⇒ no publish restriction). A subscribe-only user happily published to arbitrary subjects until given `publish: { deny: [">"] }`. **Fixed in this repo:** `UserJwtMinter` now mints an explicit `deny: [">"]` for whichever side's allow list is empty (unit-tested, and proven end to end in `dev/secure-example/`).
 3. **Never grant `_INBOX.>` or any shared inbox root.** Inboxes have no server-side ownership — any subscriber to `_INBOX.>` reads everyone's replies in the account (§2.2, verified live).
@@ -167,7 +169,7 @@ Bottom line: **NATS gives no intra-account privacy except subject permissions.**
 
 ## 7. Secure-by-default configuration example (NATS + NACS)
 
-A complete, minimal starting point: one app (`notes`), pre-authenticated (anonymous) users locked down with **no cross-talk**, and a realistic authenticated profile. **This whole section is proven end to end by `dev/secure-example/`** — real nats-server v2.15.3 + real Keycloak 26 + the real `AuthCallout.Host`, with a C# proof app (`Prove.cs`, NATS.Net) asserting 13 delivery-level properties: `RESULT: 13 passed, 0 failed`. The `server.conf` below passes `nats-server -t`.
+A complete, minimal starting point: one app (`notes`), pre-authenticated (anonymous) users locked down with **no cross-talk**, and a realistic authenticated profile. **This whole section is proven end to end by `dev/secure-example/`** — real nats-server v2.15.3 + real Keycloak 26 + the real `AuthCallout.Host`, with a C# proof app (`Prove.cs`, NATS.Net) asserting 24 delivery-level properties across two applications: `RESULT: 24 passed, 0 failed`. The `server.conf` below passes `nats-server -t`.
 
 ### 7.1 NATS `server.conf`
 
