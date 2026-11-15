@@ -45,6 +45,19 @@ Images are signed keyless with [cosign](https://github.com/sigstore/cosign)
 and carry an SBOM + SLSA provenance attestation — see
 [Image verification](https://ryandanthony.github.io/nats-auth-callout-service/docs/operations/deployment#image-verification-cosign).
 
+## Client packages
+
+.NET consumers integrate via NuGet packages published with each release:
+`AuthCallout.Client` (token providers, managed connection with the
+[ADR 0021](./docs/architecture-decision-log/0021-client-connection-retry-semantics.md)
+retry contract, scoped inbox prefix, identity propagation) and
+`AuthCallout.Client.Wolverine` (the same for [Wolverine](https://wolverinefx.net/)
+hosts: transport auth + identity middleware), plus the lower-level
+`AuthCallout.Contracts` / `AuthCallout.Identity` primitives. See the
+[client library](https://ryandanthony.github.io/nats-auth-callout-service/docs/guides/client-library)
+and [Wolverine](https://ryandanthony.github.io/nats-auth-callout-service/docs/guides/wolverine)
+guides.
+
 ## Design
 
 [`docs/design/`](./docs/design/) has the full design (start at

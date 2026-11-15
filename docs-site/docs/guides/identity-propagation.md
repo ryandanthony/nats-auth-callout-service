@@ -24,10 +24,12 @@ dotnet add package AuthCallout.Identity   # brings AuthCallout.Contracts and Aut
 | Package | What you use from it |
 |---|---|
 | `AuthCallout.Contracts` | `AppSlug`: bucket names (`DiscoveryBucket`, `AssertionsBucket`, `OidcTokensBucket`, `AssertionKeysBucket`), `DiscoveryDescriptorKey`, KV key derivation (`SanitizeKeySegment`, `DeriveKeySegment`), and `ClientInboxPrefix`. `AssertionClaims`. |
-| `AuthCallout.Identity` | `AssertionSigner.Verify(compactJwt, publicKey)` to check a `Callout-Identity` header. |
+| `AuthCallout.Identity` | `AssertionSigner.Verify(compactJwt, publicKey)` / `AssertionVerifier.Verify` to check a `Callout-Identity` header. |
 | `AuthCallout.Core` | Dependency of Identity. Not normally referenced directly. |
+| `AuthCallout.Client` | The full consumer flow prebuilt: discovery, self-assertion, header attach, verification. See the [client library guide](./client-library.md). |
+| `AuthCallout.Client.Wolverine` | The same for Wolverine hosts, as transport config + middleware. See the [Wolverine guide](./wolverine.md). |
 
-Package versions match the service release (release `v1.2.3` publishes `1.2.3`; a release is cut on every green push to `main`). The repo's [`dev/samples/Shared`](https://github.com/ryandanthony/nats-auth-callout-service/tree/main/dev/samples/Shared) shows the full flow built on these packages: discovery, self-assertion fetch, verification and OIDC token resolution.
+Package versions match the service release (release `v1.2.3` publishes `1.2.3`; a release is cut on every green push to `main`). The repo's [`dev/samples`](https://github.com/ryandanthony/nats-auth-callout-service/tree/main/dev/samples) show the full flow built on these packages: discovery, self-assertion fetch, verification and OIDC token resolution.
 
 ## The full sequence
 
