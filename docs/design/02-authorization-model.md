@@ -119,7 +119,7 @@ A profile builds dynamic subjects from **named template variables** bound to tok
 - A `required` variable that resolves to no value denies the connection; a template whose variable has no value simply emits nothing.
 - Transforms make otherwise unsafe claim values usable in subjects (NATS `.`, `*`, `>`, whitespace are special). Steps include `lowercase`, `replace`, `sanitize`, `hash`, `prefix`/`suffix`, and `require-safe` (deny on an unsafe result). The `{scope}` single-claim form is just one variable named `scope`.
 
-Example: variables `tenant := household_id` and `user := email | lowercase | replace(. -> _) | replace(@ -> _)`, with template `mise.house.{tenant}.user.{user}.commands`. A token with `household_id = [H1, H2]` and `email = Alice@Example.com` yields `mise.house.H1.user.alice_example_com.commands` and `mise.house.H2.user.alice_example_com.commands`.
+Example: variables `tenant := household_id` and `user := email | lowercase | replace(. -> _) | replace(@ -> _)`, with template `acme.house.{tenant}.user.{user}.commands`. A token with `household_id = [H1, H2]` and `email = Alice@Example.com` yields `acme.house.H1.user.alice_example_com.commands` and `acme.house.H2.user.alice_example_com.commands`.
 
 ## Identity propagation (ADR 0010, 0011)
 
@@ -161,7 +161,7 @@ An anonymous connection cannot be routed to any single application, so its grant
 flowchart LR
   a1[App notes\nanonymousProfile] --> u{Union + de-dup}
   a2[App tasks\nanonymousProfile] --> u
-  a3[App mise\nanonymousProfile] --> u
+  a3[App acme\nanonymousProfile] --> u
   a4[App with no\nanonymousProfile] -. contributes nothing .-> u
   u --> g[Anonymous grant]
   g --> acct[Minted into global ANON account\nglobal expiry]

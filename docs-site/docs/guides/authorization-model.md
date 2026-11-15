@@ -136,15 +136,15 @@ variables:
   - name: user
     claim: email
     transforms: [lowercase, { replace: { from: ".", to: "_" } }, { replace: { from: "@", to: "_" } }]
-publishTemplates: ["mise.house.{tenant}.user.{user}.commands"]
+publishTemplates: ["acme.house.{tenant}.user.{user}.commands"]
 ```
 
 A token with `household_id = [H1, H2]` and `email = Alice@Example.com`
 yields:
 
 ```
-mise.house.H1.user.alice_example_com.commands
-mise.house.H2.user.alice_example_com.commands
+acme.house.H1.user.alice_example_com.commands
+acme.house.H2.user.alice_example_com.commands
 ```
 
 ## Anonymous grant is a union

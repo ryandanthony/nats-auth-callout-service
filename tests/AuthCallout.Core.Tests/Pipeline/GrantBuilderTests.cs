@@ -153,9 +153,9 @@ public sealed class GrantBuilderTests
         };
         var profile = PipelineTestBuilders.TemplatedProfile(
             variables,
-            publishTemplates: ["mise.house.{tenant}.user.{user}.commands"],
-            subscribeTemplates: ["mise.house.{tenant}.user.{user}.events.>"]);
-        var application = PipelineTestBuilders.Application(name: "mise", profiles: [profile]);
+            publishTemplates: ["acme.house.{tenant}.user.{user}.commands"],
+            subscribeTemplates: ["acme.house.{tenant}.user.{user}.events.>"]);
+        var application = PipelineTestBuilders.Application(name: "acme", profiles: [profile]);
         var claims = ClaimsAccessor.Parse("""{ "sub": "user-1", "household_id": ["H1", "H2"], "email": "Alice@Example.com" }""");
 
         var result = GrantBuilder.Build(application, profile, claims, principal: null, issuer: "https://issuer.example.com", FixedExpiry);
@@ -165,11 +165,11 @@ public sealed class GrantBuilderTests
         // The two template-expanded publish subjects come first (cross-product over household_id),
         // followed by the auto-added JetStream read-API subjects for the KV buckets this grant reads.
         Assert.Equal(
-            ["mise.house.H1.user.alice_example_com.commands", "mise.house.H2.user.alice_example_com.commands"],
+            ["acme.house.H1.user.alice_example_com.commands", "acme.house.H2.user.alice_example_com.commands"],
             result.Decision!.Publish.Where(static s => !s.StartsWith("$JS.API.", StringComparison.Ordinal)).ToArray());
         Assert.Contains("$JS.API.STREAM.INFO.KV_callout_assertion_keys", result.Decision!.Publish);
-        Assert.Contains("mise.house.H1.user.alice_example_com.events.>", result.Decision!.Subscribe);
-        Assert.Contains("mise.house.H2.user.alice_example_com.events.>", result.Decision!.Subscribe);
+        Assert.Contains("acme.house.H1.user.alice_example_com.events.>", result.Decision!.Subscribe);
+        Assert.Contains("acme.house.H2.user.alice_example_com.events.>", result.Decision!.Subscribe);
     }
 
     [Fact]

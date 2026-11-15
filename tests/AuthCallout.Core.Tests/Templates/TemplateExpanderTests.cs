@@ -218,7 +218,7 @@ public sealed class TemplateExpanderTests
     /// <summary>
     /// The doc 02 / ADR 0009 worked example, end to end: variables <c>tenant := household_id</c>
     /// and <c>user := email | lowercase | replace(. -&gt; _) | replace(@ -&gt; _)</c>, template
-    /// <c>mise.house.{tenant}.user.{user}.commands</c>, token with
+    /// <c>acme.house.{tenant}.user.{user}.commands</c>, token with
     /// <c>household_id = [H1, H2]</c> and <c>email = Alice@Example.com</c> yields exactly the
     /// two documented subjects.
     /// </summary>
@@ -231,10 +231,10 @@ public sealed class TemplateExpanderTests
             ["user"] = ["alice_example_com"], // pre-transformed, as VariableResolver would produce
         };
 
-        var subjects = TemplateExpander.Expand("mise.house.{tenant}.user.{user}.commands", resolved);
+        var subjects = TemplateExpander.Expand("acme.house.{tenant}.user.{user}.commands", resolved);
 
         Assert.Equal(
-            ["mise.house.H1.user.alice_example_com.commands", "mise.house.H2.user.alice_example_com.commands"],
+            ["acme.house.H1.user.alice_example_com.commands", "acme.house.H2.user.alice_example_com.commands"],
             subjects);
     }
 }

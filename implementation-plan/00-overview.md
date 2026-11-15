@@ -14,7 +14,7 @@ this plan encodes them.
 | A2 | Database config source **in scope**: PostgreSQL + Dapper. |
 | A3 | Helm chart in scope (`deploy/helm/`). |
 | A4 | User/operator docs site in scope, published to `ryandanthony.github.io` (style: [dottie docs](https://ryandanthony.github.io/dottie/)). |
-| B5–B9 | Phase 0 bootstrap packet first; conventions from `festina-lente-io/code-standards` NuGet + mise repo files; CI (build + tests) from day one; **direct-to-main** commits; central package management with **pinned** versions. |
+| B5–B9 | Phase 0 bootstrap packet first; conventions from `festina-lente-io/code-standards` NuGet + an existing private reference repo; CI (build + tests) from day one; **direct-to-main** commits; central package management with **pinned** versions. |
 | C10–C13 | Contracts frozen after Phase 0 (changes need coordinator approval); interface list per packet 02; **two** reason enums (internal `DenyReason`, wire event `reason`) with an explicit mapping; four JSON Schemas authored in Phase 0. |
 | D14 | xkey callout encryption **implemented**, plus **ADR 0018** documenting the decision. |
 | D15 | Anonymous with zero `anonymousProfile` contributions = **deny**. |

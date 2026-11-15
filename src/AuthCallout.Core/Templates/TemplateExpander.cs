@@ -64,7 +64,7 @@ public static class TemplateExpander
     }
 
     /// <summary>Expands one template against resolved variable values.</summary>
-    /// <param name="template">The subject-pattern template, e.g. <c>mise.house.{tenant}.user.{user}.commands</c>.</param>
+    /// <param name="template">The subject-pattern template, e.g. <c>acme.house.{tenant}.user.{user}.commands</c>.</param>
     /// <param name="resolvedVariables">Every declared variable's resolved values, keyed by name.</param>
     /// <returns>Every expanded subject for this template, sorted ordinally. Empty when a referenced variable resolved to zero values.</returns>
     /// <exception cref="KeyNotFoundException">The template references a variable name absent from <paramref name="resolvedVariables"/> (config-validation should have already rejected this).</exception>

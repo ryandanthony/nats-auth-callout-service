@@ -47,9 +47,9 @@ CI workflow) become **coordinator-mediated** — workers request changes via DM.
 
 1. **Seed conventions from reference repos** (fetch raw files, then adapt):
    - `.editorconfig`, `global.json`, `Directory.Build.props`,
-     `Directory.Build.targets`, `stylecop.json` from
-     `github.com/ryandanthony/mise` (main branch).
-   - `Directory.Packages.props` from mise, **stripped of
+     `Directory.Build.targets`, `stylecop.json` from an existing private
+     reference repo of the maintainer's.
+   - `Directory.Packages.props` from the same repo, **stripped of
      Marten/Wolverine/Avalonia** entries, repopulated with this project's set.
    - `GitVersion.yml` from `github.com/ryandanthony/mcp-private-library`.
    - Reference the `festina-lente-io/code-standards` NuGet package in

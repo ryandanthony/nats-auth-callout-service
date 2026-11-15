@@ -57,12 +57,12 @@ The transform set is fixed and defined by the service, not arbitrary code. Unkno
       "transforms": [ "lowercase", { "replace": { "from": ".", "to": "_" } },
                       { "replace": { "from": "@", "to": "_" } }, "require-safe" ] }
   ],
-  "publishTemplates": [ "mise.house.{tenant}.user.{user}.commands" ],
-  "subscribeTemplates": [ "mise.house.{tenant}.user.{user}.events.>" ]
+  "publishTemplates": [ "acme.house.{tenant}.user.{user}.commands" ],
+  "subscribeTemplates": [ "acme.house.{tenant}.user.{user}.events.>" ]
 }
 ```
 
-A token with `household_id = [H1, H2]` and `email = Alice@Example.com` yields publish subjects `mise.house.H1.user.alice_example_com.commands` and `mise.house.H2.user.alice_example_com.commands`.
+A token with `household_id = [H1, H2]` and `email = Alice@Example.com` yields publish subjects `acme.house.H1.user.alice_example_com.commands` and `acme.house.H2.user.alice_example_com.commands`.
 
 ## Consequences
 

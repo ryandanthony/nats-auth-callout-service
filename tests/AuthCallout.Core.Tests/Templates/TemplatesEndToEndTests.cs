@@ -37,14 +37,14 @@ public sealed class TemplatesEndToEndTests
         var denyReason = VariableResolver.TryResolveAll(variables, claims, out var resolved);
         Assert.Null(denyReason);
 
-        var publishSubjects = TemplateExpander.ExpandAll(["mise.house.{tenant}.user.{user}.commands"], resolved);
-        var subscribeSubjects = TemplateExpander.ExpandAll(["mise.house.{tenant}.user.{user}.events.>"], resolved);
+        var publishSubjects = TemplateExpander.ExpandAll(["acme.house.{tenant}.user.{user}.commands"], resolved);
+        var subscribeSubjects = TemplateExpander.ExpandAll(["acme.house.{tenant}.user.{user}.events.>"], resolved);
 
         Assert.Equal(
-            ["mise.house.H1.user.alice_example_com.commands", "mise.house.H2.user.alice_example_com.commands"],
+            ["acme.house.H1.user.alice_example_com.commands", "acme.house.H2.user.alice_example_com.commands"],
             publishSubjects);
         Assert.Equal(
-            ["mise.house.H1.user.alice_example_com.events.>", "mise.house.H2.user.alice_example_com.events.>"],
+            ["acme.house.H1.user.alice_example_com.events.>", "acme.house.H2.user.alice_example_com.events.>"],
             subscribeSubjects);
     }
 
