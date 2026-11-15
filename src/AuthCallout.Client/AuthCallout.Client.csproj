@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Consumer-side integration library for nats-auth-callout-service (ADR 0020): token acquisition and refresh, scoped NatsOpts construction, a managed connection implementing ADR 0021's retry/auth-violation semantics, discovery, identity-assertion attach/verify, and optional Microsoft.Extensions.DependencyInjection wiring.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NATS.Net" />
+    <PackageReference Include="NATS.Client.KeyValueStore" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AuthCallout.Contracts\AuthCallout.Contracts.csproj" />
+    <ProjectReference Include="..\AuthCallout.Identity\AuthCallout.Identity.csproj" />
+  </ItemGroup>
+
+</Project>
