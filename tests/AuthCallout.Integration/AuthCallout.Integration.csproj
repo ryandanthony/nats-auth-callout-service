@@ -30,6 +30,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\AuthCallout.Host\AuthCallout.Host.csproj" />
     <ProjectReference Include="..\..\src\AuthCallout.Config.Files\AuthCallout.Config.Files.csproj" />
+    <ProjectReference Include="..\..\src\AuthCallout.Client\AuthCallout.Client.csproj" />
   </ItemGroup>
 
 </Project>

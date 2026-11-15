@@ -59,6 +59,13 @@ public static class IntegrationRealm
     /// <summary>Gets the client-credentials secret for <see cref="ServiceClientId"/>.</summary>
     public const string ServiceClientSecret = "tasks-service-secret";
 
+    /// <summary>
+    /// Gets a second client-credentials client id (<c>no-propagation-service</c>), reusing
+    /// <see cref="ServiceClientSecret"/>, for the P19 client-library identity-propagation-disabled
+    /// scenario's dedicated application (<c>ClientLibraryIdentityPropagationTests</c>).
+    /// </summary>
+    public const string NoPropagationServiceClientId = "no-propagation-service";
+
     /// <summary>Gets the seconds a <see cref="ShortLivedClientId"/> token remains valid for.</summary>
     public const int ShortLivedTokenSeconds = 6;
 #pragma warning restore S2339
@@ -85,7 +92,8 @@ public static class IntegrationRealm
             {{PasswordGrantClient(TasksClientId)}},
             {{WrongAudienceClient()}},
             {{ShortLivedClient()}},
-            {{ServiceCredentialsClient()}}
+            {{ServiceCredentialsClient(ServiceClientId, ServiceClientSecret)}},
+            {{ServiceCredentialsClient(NoPropagationServiceClientId, ServiceClientSecret)}}
           ],
           "users": [
             {{User(NoteUsername, NotePassword, ["notes-editor"])}},
@@ -159,9 +167,9 @@ public static class IntegrationRealm
         }
         """;
 
-    private static string ServiceCredentialsClient() => $$"""
+    private static string ServiceCredentialsClient(string clientId, string secret) => $$"""
         {
-          "clientId": "{{ServiceClientId}}",
+          "clientId": "{{clientId}}",
           "enabled": true,
           "redirectUris": [],
           "webOrigins": [],
@@ -170,7 +178,7 @@ public static class IntegrationRealm
           "directAccessGrantsEnabled": false,
           "serviceAccountsEnabled": true,
           "publicClient": false,
-          "secret": "{{ServiceClientSecret}}",
+          "secret": "{{secret}}",
           "protocol": "openid-connect",
           "protocolMappers": [ {{AudienceMapper()}} ]
         }
