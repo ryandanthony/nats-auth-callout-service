@@ -229,11 +229,11 @@ public sealed class ClientCredentialsTokenProvider : ICalloutTokenProvider, IDis
             case SecretRefKind.Inline:
                 return secretRef.Value ?? throw new InvalidOperationException("Inline ClientSecret reference has no 'Value'.");
             case SecretRefKind.File:
-            {
-                var path = secretRef.Path ?? throw new InvalidOperationException("File ClientSecret reference has no 'Path'.");
-                var raw = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-                return raw.TrimEnd('\r', '\n');
-            }
+                {
+                    var path = secretRef.Path ?? throw new InvalidOperationException("File ClientSecret reference has no 'Path'.");
+                    var raw = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+                    return raw.TrimEnd('\r', '\n');
+                }
 
             default:
                 throw new NotSupportedException(
