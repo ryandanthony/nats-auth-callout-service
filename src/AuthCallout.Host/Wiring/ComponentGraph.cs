@@ -110,6 +110,8 @@ public static class ComponentGraph
         Name = "auth-callout",
         RetryOnInitialConnect = true, // ADR 0017 §1: always attempt recovery, including the first connect.
         AuthOpts = serviceUserSeed is not null ? new NatsAuthOpts { Seed = serviceUserSeed, NKey = NATS.NKeys.KeyPair.FromSeed(serviceUserSeed).GetPublicKey() } : NatsAuthOpts.Default,
+        // See NatsImplicitTls for why tls:// requires an explicit TlsMode.Implicit opt-in.
+        TlsOpts = NatsImplicitTls.ResolveTlsOpts(natsUrl),
     };
 
     private sealed record PipelineParts(JwksCacheManager JwksCacheManager, IResolutionPipeline ResolutionPipeline, IUserJwtMinter Minter, ICalloutCrypto CalloutCrypto);
