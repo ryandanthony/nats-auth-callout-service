@@ -21,6 +21,11 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.K3s" />
     <PackageReference Include="Alba" />
+    <!-- P20 task 4: Wolverine codegen needs runtime compilation (dev/samples' own
+         NoteService/TaskService csproj reference the same package for the same reason) -
+         these in-test Wolverine hosts build opts.UseWolverine at test run time, never
+         pre-generated, so the runtime-compiled fallback is required here too. -->
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
   </ItemGroup>
 
   <ItemGroup>
@@ -31,6 +36,7 @@
     <ProjectReference Include="..\..\src\AuthCallout.Host\AuthCallout.Host.csproj" />
     <ProjectReference Include="..\..\src\AuthCallout.Config.Files\AuthCallout.Config.Files.csproj" />
     <ProjectReference Include="..\..\src\AuthCallout.Client\AuthCallout.Client.csproj" />
+    <ProjectReference Include="..\..\src\AuthCallout.Client.Wolverine\AuthCallout.Client.Wolverine.csproj" />
   </ItemGroup>
 
 </Project>

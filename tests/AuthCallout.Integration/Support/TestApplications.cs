@@ -35,6 +35,21 @@ public static class TestApplications
 
     /// <summary>The <c>tasks</c> app's service profile name (<c>azp</c> match, ADR 0002).</summary>
     public const string TasksServiceProfileName = "worker-service";
+
+    /// <summary>
+    /// The P20 Wolverine integration suite's dedicated application name
+    /// (<see cref="WolverineIntegrationTests"/> and siblings): a third application, independent
+    /// of <c>notes</c>/<c>tasks</c>, granted both <see cref="IntegrationRealm.WolverineClientClientId"/>
+    /// and <see cref="IntegrationRealm.WolverineServiceClientId"/> (both matched via <c>azp</c>,
+    /// ADR 0002 — no NKey/<c>auth_users</c> anywhere, pure callout auth for both roles) under one
+    /// profile so client and service hosts share the same grant shape (pub+sub on
+    /// <c>wolverine.dev.&gt;</c> plus the <c>wolverine.response.&gt;</c> reply subject every
+    /// Wolverine-over-NATS node publishes replies to, per <c>NatsTransportExtensions</c>'s remarks).
+    /// </summary>
+    public const string WolverineAppName = "wolverine";
+
+    /// <summary>The <see cref="WolverineAppName"/> application's sole profile name.</summary>
+    public const string WolverineProfileName = "wolverine-host";
 #pragma warning restore S2339
 
 #pragma warning disable S2339 // Kept const (matching the repo's existing named-constant pattern); these are wire-protocol subject literals, not mutable state.
@@ -141,4 +156,46 @@ public static class TestApplications
         Audience: ["nats"],
         ClockSkew: DurationString.Parse("60s"),
         AllowedAlgorithms: ["RS256"]);
+
+    /// <summary>
+    /// Builds the P20 <see cref="WolverineAppName"/> application: one profile matched on any of
+    /// the Wolverine client-credentials clients (<see cref="IntegrationRealm.WolverineClientClientId"/>,
+    /// <see cref="IntegrationRealm.WolverineServiceClientId"/>) plus <see cref="IntegrationRealm.ShortLivedClientId"/>
+    /// (the token-freshness scenario's password-grant client, reused here so that scenario's
+    /// host actually authenticates rather than only proving it attempted to), granting pub+sub on
+    /// <c>wolverine.dev.&gt;</c> (the handler-chain subjects the test hosts
+    /// publish/listen on) and <c>wolverine.response.&gt;</c> (Wolverine's own per-node reply
+    /// subject for request/reply — see <c>AuthCallout.Client.Wolverine.NatsTransportExtensions</c>'s
+    /// remarks on why Wolverine's reply path needs no custom inbox scoping). Reuses
+    /// <see cref="NatsServerConfigBuilder.TasksAccountName"/> (no JetStream assets of its own
+    /// either, so no new NATS account is needed in <see cref="NatsServerConfigBuilder"/>).
+    /// </summary>
+    /// <param name="issuerAuthority">The Keycloak realm issuer authority.</param>
+    /// <returns>The <see cref="WolverineAppName"/> application config.</returns>
+    public static Application WolverineApp(string issuerAuthority) => new(
+        Name: WolverineAppName,
+        TargetAccount: NatsServerConfigBuilder.TasksAccountName,
+        Issuer: Issuer(issuerAuthority),
+        Match: new ClaimMatch(new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            ["azp"] = [IntegrationRealm.WolverineClientClientId, IntegrationRealm.WolverineServiceClientId, IntegrationRealm.ShortLivedClientId],
+        }),
+        AnonymousProfile: null,
+        Profiles:
+        [
+            new Profile(
+                Name: WolverineProfileName,
+                Match: new ClaimMatch(new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+                {
+                    ["azp"] = [IntegrationRealm.WolverineClientClientId, IntegrationRealm.WolverineServiceClientId, IntegrationRealm.ShortLivedClientId],
+                }),
+                Grant: GrantWithKvClientSubjects(["wolverine.dev.>", "wolverine.response.>"], ["wolverine.dev.>", "wolverine.response.>"]),
+                NameClaim: "azp",
+                Variables: [],
+                PublishTemplates: [],
+                SubscribeTemplates: [],
+                AutoAddSessionAccess: true),
+        ],
+        IdentityPropagation: new IdentityPropagationConfig(Enabled: true),
+        Events: new EventSubjects(Success: "wolverine.events.auth.success", Failure: "wolverine.events.auth.failure"));
 }

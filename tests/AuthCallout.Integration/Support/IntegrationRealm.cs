@@ -68,6 +68,20 @@ public static class IntegrationRealm
 
     /// <summary>Gets the seconds a <see cref="ShortLivedClientId"/> token remains valid for.</summary>
     public const int ShortLivedTokenSeconds = 6;
+
+    /// <summary>
+    /// Gets the client-credentials client id a P20 Wolverine "client" host authenticates with
+    /// (<see cref="TestApplications.WolverineAppName"/>'s grant match). Reuses
+    /// <see cref="ServiceClientSecret"/>.
+    /// </summary>
+    public const string WolverineClientClientId = "wolverine-client";
+
+    /// <summary>
+    /// Gets the client-credentials client id a P20 Wolverine "service" host authenticates with
+    /// (<see cref="TestApplications.WolverineAppName"/>'s grant match). Reuses
+    /// <see cref="ServiceClientSecret"/>.
+    /// </summary>
+    public const string WolverineServiceClientId = "wolverine-service";
 #pragma warning restore S2339
 
     /// <summary>Builds the realm export JSON imported by <c>Testcontainers.Keycloak</c>'s <c>WithRealm</c>.</summary>
@@ -93,7 +107,9 @@ public static class IntegrationRealm
             {{WrongAudienceClient()}},
             {{ShortLivedClient()}},
             {{ServiceCredentialsClient(ServiceClientId, ServiceClientSecret)}},
-            {{ServiceCredentialsClient(NoPropagationServiceClientId, ServiceClientSecret)}}
+            {{ServiceCredentialsClient(NoPropagationServiceClientId, ServiceClientSecret)}},
+            {{ServiceCredentialsClient(WolverineClientClientId, ServiceClientSecret)}},
+            {{ServiceCredentialsClient(WolverineServiceClientId, ServiceClientSecret)}}
           ],
           "users": [
             {{User(NoteUsername, NotePassword, ["notes-editor"])}},
