@@ -28,9 +28,9 @@ Dependencies: `AuthCallout.Contracts`, `AuthCallout.Identity`, `NATS.Net`
 
 | New piece | Source | Changes |
 |---|---|---|
-| Retry/auth-violation policy | mise `Mise.App.Core/Services/NatsClientService.cs` | Drop Polly + Avalonia/`IConfiguration` coupling; keep semantics + rationale comments (ADR 0021) |
-| Anonymous vs authenticated split | mise `NatsClientService` + `NatsInboxPrefix.cs` | Anonymous inbox prefix becomes an option |
-| Inbox prefix derivation | samples `CalloutInboxPrefix` / mise `NatsInboxPrefix` | One implementation on `OidcTokenClaims` + `AppSlug.ClientInboxPrefix` |
+| Retry/auth-violation policy | A production consumer's hardened NATS client | Semantics codified in ADR 0021; re-implement there without its Polly/UI coupling |
+| Anonymous vs authenticated split | Same consumer's client + inbox-prefix helper | Anonymous inbox prefix becomes an option |
+| Inbox prefix derivation | samples `CalloutInboxPrefix` | One implementation on `OidcTokenClaims` + `AppSlug.ClientInboxPrefix`, plus the anonymous/no-token path |
 | Token refresh near `exp` | samples `LoadService/RefreshingCalloutConnection` | Generalize into `ClientCredentialsTokenProvider`; `TimeProvider`-injected |
 | Client-credentials fetch | samples `DevOidcTokenFetcher` | ROPC → client credentials; authority/OIDC-discovery support; `IHttpClientFactory`-friendly |
 | Discovery / self-assertion / resolver / verifier / context | samples `Shared/*` | Promote near-verbatim; cancellation tokens, logging, API polish |
@@ -64,7 +64,8 @@ public interface ICalloutTokenProvider
   scopes/audience. Refresh per ADR 0021 rule 5 (30s margin, 5s backoff on
   failed re-mint, stale token retained).
 - `StaticTokenProvider` (tests, CLI tools), `DelegateTokenProvider`
-  (`Func<CancellationToken, ValueTask<string?>>` — mise's `IAuthService` plugs in here).
+  (`Func<CancellationToken, ValueTask<string?>>` — an app with its own auth
+  stack plugs in here).
 - Promote `OidcTokenClaims` (unvalidated `sub`/`azp`/`exp`/`jti` reads).
 
 ### 2. Connection options builder
@@ -84,7 +85,7 @@ var opts = await CalloutNatsOpts.CreateAsync(new CalloutClientOptions
 - `AuthOpts.Token` + `InboxPrefix = AppSlug.ClientInboxPrefix(principal)`
   (`sub` → `azp` fallback; `AppSlug` is the single naming source, ADR 0013).
 - Anonymous mode: caller-configurable anonymous inbox prefix, documented default
-  `{slug}._INBOX` (app policy, not NACS policy — mise's convention).
+  `{slug}._INBOX` (app policy, not NACS policy).
 - Raw `NatsOpts` is exposed for callers who own their connection (and for P20).
 
 ### 3. Managed connection (`CalloutNatsConnection`)
@@ -123,7 +124,7 @@ registers `ICalloutTokenProvider`, `CalloutNatsConnection` (singleton),
   re-mint backoff with `FakeTimeProvider`; secret sourcing; inbox-prefix
   derivation incl. anonymous; auth-violation detection.
 - Integration (existing P14 harness: real NATS + Keycloak + NACS): connect as
-  service via client credentials; mise's ported auth scenarios (one retry on
+  service via client credentials; the ADR 0021 auth scenarios (one retry on
   violation, fast terminal failure on bad token, reconnect succeeds with
   refreshed token, terminal on null token); scoped-inbox isolation; full
   propagation round trip (attach → verify → resolve OIDC token); forged/expired
@@ -142,8 +143,8 @@ registers `ICalloutTokenProvider`, `CalloutNatsConnection` (singleton),
 
 - `AuthCallout.Client` on nuget.org via a tagged release; samples and
   integration suite run on the package, green in CI.
-- Mise could adopt it as a drop-in for `NatsInboxPrefix` + `NatsClientService`'s
-  connect plumbing (the acceptance bar; the mise PR itself is out of scope).
+- The acceptance bar: an existing consumer with hand-rolled connect and
+  inbox-prefix plumbing could adopt the library as a drop-in replacement.
 
 ## Open questions
 

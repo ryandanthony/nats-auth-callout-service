@@ -8,9 +8,9 @@
 
 NACS fails closed (ADR 0003): a presented-but-invalid token is **denied**, never
 downgraded to anonymous. That changes what a correct client connect loop looks
-like. Mise hit all of these against NACS v0.1.3 (its spec 022, Phase 3):
+like. A production consumer hit all of these against NACS v0.1.3:
 
-- Retrying a denied connect with the same token loops forever (the pre-fix mise
+- Retrying a denied connect with the same token loops forever (its pre-fix
   client hit a 20s test guard proving exactly that).
 - A missing token (failed silent refresh) must not fall through to an anonymous
   connect, or an authenticated session silently loses its grants.
@@ -18,13 +18,12 @@ like. Mise hit all of these against NACS v0.1.3 (its spec 022, Phase 3):
   (`MaxReconnectRetry`) re-presents a token that may have expired, and cannot
   recompute the scoped `InboxPrefix` for a new principal.
 
-Mise's `NatsClientService` encodes the answers and verified them against a real
-NACS container (`NatsClientServiceAuthTests`). Those semantics are currently
-documented nowhere in NACS itself.
+That consumer's client encodes the answers and verified them against a real
+NACS container. Those semantics are currently documented nowhere in NACS itself.
 
 ## Decision
 
-The `AuthCallout.Client` managed connection (ADR 0020) adopts mise's semantics
+The `AuthCallout.Client` managed connection (ADR 0020) adopts those semantics
 as the contract:
 
 1. **Transport failures** (server down, network): retry indefinitely with
@@ -54,13 +53,11 @@ as the contract:
 - If a future NATS.Net adds a per-reconnect credential callback, rule 4's
   self-managed loop can collapse onto it; the seam stays internal so that swap
   is non-breaking.
-- These semantics are proven behavior (mise integration suite) being codified,
-  not new design.
+- These semantics are proven behavior (verified in a consumer's integration
+  suite against a real NACS container) being codified, not new design.
 
 ## Related
 
 - ADRs: [0003](./0003-resolution-order-issuer-validate-app-profile.md) (deny,
   never downgrade), [0020](./0020-ship-client-integration-libraries.md).
 - Implementation: [P19 — Client library](../../implementation-plan/19-client-library.md).
-- Prior art: mise `src/Mise.App/Mise.App.Core/Services/NatsClientService.cs`,
-  mise spec `022-nacs-auth-callout` Phase 3/4.

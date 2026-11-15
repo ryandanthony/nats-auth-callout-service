@@ -17,12 +17,13 @@ That code exists twice today, neither shipped:
 - `dev/samples/Shared` (`CalloutConnection`, `CalloutInboxPrefix`,
   `CalloutDiscovery`, `CalloutSelfAssertion`, `CalloutIdentityResolver`,
   `OidcTokenClaims`, `RefreshingCalloutConnection`) — demo-grade, never packed.
-- Mise (`NatsClientService`, `NatsInboxPrefix`) — production-hardened connect and
-  retry logic built against NACS v0.1.3, duplicating the sample concepts.
+- A production consumer's app, which independently built and hardened the same
+  connect, inbox, and retry logic against NACS v0.1.3, duplicating the sample
+  concepts.
 
 The published packages (`AuthCallout.Contracts`, `AuthCallout.Core`,
-`AuthCallout.Identity`) carry primitives only; the first real consumer (mise)
-had to rebuild the integration layer, and the second would too.
+`AuthCallout.Identity`) carry primitives only; the first real consumer had to
+rebuild the integration layer, and the second would too.
 
 ## Decision
 
@@ -40,8 +41,9 @@ flows (attach vs. verify), so splitting packages would force most consumers to
 reference both.
 
 The library is promoted from, not written beside, the existing code: the sample
-helpers and mise's hardened logic are its sources, and `dev/samples/` is
-rewritten on top of it so the integration suite exercises the shipped package.
+helpers and the field-hardened consumer logic are its sources, and
+`dev/samples/` is rewritten on top of it so the integration suite exercises the
+shipped package.
 
 Framework-specific layers (Wolverine, ADR 0022) build on this library and never
 force a messaging framework on raw NATS.Net consumers: `AuthCallout.Client`
@@ -49,8 +51,8 @@ depends only on `AuthCallout.Contracts`, `AuthCallout.Identity`, and `NATS.Net`.
 
 ## Consequences
 
-- Consumers get a supported, tested integration path; mise can delete
-  `NatsInboxPrefix` and most of `NatsClientService`'s connect plumbing.
+- Consumers get a supported, tested integration path and can delete their
+  hand-rolled inbox-prefix and connect plumbing.
 - The samples stop being the de facto client library and become living
   documentation of the real one.
 - The client-facing behaviors (inbox naming, discovery shape, header name)

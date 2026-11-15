@@ -31,8 +31,8 @@ Serves both roles:
 |---|---|---|
 | Transport setup behind the callout | `dev/samples/*/Program.cs` + `CalloutConnection` | Samples already run Wolverine over NACS: `UseNats` fed with token + scoped `InboxPrefix` |
 | Inbound verification middleware | `dev/samples/Shared/CalloutIdentityMiddleware.cs` | `Before`-convention middleware returning `(HandlerContinuation, CalloutIdentityContext?)`; Stop on missing/forged header |
-| Late transport config patching | mise `ServiceRegistration.PatchNatsTransportConfig` | `UseWolverine` reads config eagerly pre-Build; capture `NatsTransportConfiguration` and patch URL/auth in a config hook. Same trick applies for injecting the token `AuthCallback` |
-| Scoped listener/middleware wiring | mise `ConfigureNatsListeners` + `MiseUserContextMiddleware` | The shape of per-subject listeners + auth middleware; the raw-JWT `Authorization` header approach is what the signed assertion replaces (ADR 0022) |
+| Late transport config patching | Field experience with `WolverineFx.Nats` | `UseWolverine` reads config eagerly pre-Build; capture `NatsTransportConfiguration` and patch URL/auth in a config hook. Same trick applies for injecting the token `AuthCallback` (an `AuthCallback` is also the proven workaround for NKey seed handling in NATS.NET 2.7.x) |
+| Scoped listener/middleware wiring | Field experience: per-subject listeners + `Before` auth middleware | The raw-JWT `Authorization`-header approach is what the signed assertion replaces (ADR 0022) |
 
 ## Files owned
 
@@ -69,9 +69,10 @@ host.UseWolverine(opts =>
 - Registers the P19 DI services (`ICalloutTokenProvider`,
   `ICalloutIdentityVerifier`, discovery cache) into the host container.
 - Investigate first (known risk, ADR 0022 consequences): whether
-  `WolverineFx.Nats` 6.x exposes `InboxPrefix` and `AuthCallback` cleanly; mise
-  proved `AuthCallback` works (NKey variant). Any gap is fixed in this adapter,
-  or upstreamed to Wolverine, never leaked into `AuthCallout.Client`.
+  `WolverineFx.Nats` 6.x exposes `InboxPrefix` and `AuthCallback` cleanly; an
+  `AuthCallback` on the captured transport configuration is proven to work (the
+  NKey variant runs in production). Any gap is fixed in this adapter, or
+  upstreamed to Wolverine, never leaked into `AuthCallout.Client`.
 
 ### 2. Outbound: identity header on send
 
@@ -94,9 +95,9 @@ Promote `CalloutIdentityMiddleware` into the package:
   `ICalloutIdentityVerifier`, and either continues with a populated
   `CalloutIdentityContext` (injected into the handler as a parameter) or stops
   the chain. Optional configured behavior for stop: silent drop vs. error reply
-  when `ReplyUri` is present (mise's `ReplyWithErrorContinuation` pattern).
+  when `ReplyUri` is present (so fire-and-forget messages never get a reply).
 - Optional `RequireIdentity = false` mode per listener for subjects that accept
-  anonymous traffic (mise's `mise.auth.*` / `mise.discovery.*` case).
+  anonymous traffic (e.g. registration/discovery endpoints).
 
 ### 4. Tests
 
@@ -116,7 +117,7 @@ Promote `CalloutIdentityMiddleware` into the package:
   `dev/samples/Shared` after P19).
 - Docs-site: "Wolverine" guide — client host, service host (JWT instead of a
   named NATS user), identity middleware, migration notes for an existing
-  Wolverine app (what mise's Phase 6 would follow).
+  Wolverine app moving off an NKey `auth_users` bypass.
 
 ## Definition of done
 
@@ -130,7 +131,7 @@ Promote `CalloutIdentityMiddleware` into the package:
 1. Middleware binding default: marker interface vs. blanket policy on NATS
    listeners (leaning policy + opt-out).
 2. Should the stopped-chain error reply be in scope, or leave reply semantics
-   entirely to the app (mise sends `AuthenticationError`; other apps may not
-   want any reply)?
+   entirely to the app (some apps want a structured auth-error reply, others
+   none at all)?
 3. Wolverine major-version policy: pin to one major per package release, or
    widen the range once the adapter surface proves stable?
