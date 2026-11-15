@@ -27,3 +27,6 @@ The [design](../design/README.md) unifies these ADRs into a cohesive, language-a
 | [0017](./0017-watch-loss-and-connection-loss-semantics.md) | Watch-loss and connection-loss semantics | proposed |
 | [0018](./0018-xkey-encrypted-callout.md) | xkey-encrypted callout | proposed |
 | [0019](./0019-empty-grant-side-mints-explicit-deny-all.md) | Empty grant sides mint an explicit deny-all | accepted |
+| [0020](./0020-ship-client-integration-libraries.md) | Ship client integration libraries | proposed |
+| [0021](./0021-client-connection-retry-semantics.md) | Client connection retry and auth-violation semantics | proposed |
+| [0022](./0022-wolverine-as-thin-layer.md) | Wolverine support as a thin layer over the client library | proposed |

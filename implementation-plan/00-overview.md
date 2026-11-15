@@ -50,6 +50,8 @@ this plan encodes them.
 | P16 Container + CI + supply chain | [16-container-ci-supply-chain.md](./16-container-ci-supply-chain.md) | `Dockerfile`, release workflows | 1 |
 | P17 Helm chart | [17-helm-chart.md](./17-helm-chart.md) | `deploy/helm/` | 3 |
 | P18 Docs site | [18-docs-site.md](./18-docs-site.md) | `docs-site/` (or repo pattern from dottie) | 3 |
+| P19 Client library | [19-client-library.md](./19-client-library.md) | `src/AuthCallout.Client`, `dev/samples/` rewrite (ADR 0020/0021) | post-v0.1 |
+| P20 Wolverine integration | [20-wolverine-integration.md](./20-wolverine-integration.md) | `src/AuthCallout.Client.Wolverine` (ADR 0022) | post-v0.1 |
 
 ## Dependency graph
 
