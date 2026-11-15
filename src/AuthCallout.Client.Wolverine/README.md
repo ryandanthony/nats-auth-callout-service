@@ -4,7 +4,7 @@ Wolverine integration for [nats-auth-callout-service](https://github.com/ryandan
 
 ## What it gives you
 
-1. `opts.UseNatsWithCallout(callout => ...)`: authenticates Wolverine's NATS transport through the callout via an `AuthCallback` that pulls a current token from your `ICalloutTokenProvider` on every (re)connect (ADR 0021 rules 4-5), plus a second, correctly-scoped connection used only for discovery/identity-verification KV reads.
+1. `opts.UseNatsWithCallout(callout => ...)`: authenticates Wolverine's NATS transport through the callout via an `AuthCallback` that pulls a current token from your `ICalloutTokenProvider` on every (re)connect (ADR 0021 rules 4-5), and scopes the transport connection's `InboxPrefix` to the callout's per-principal inbox grant via `ConfigureNatsOpts`. Discovery and identity-verification KV reads run over that same single connection. Requires WolverineFx.Nats 6.47+.
 2. Outbound: the connection's cached `Callout-Identity` assertion is attached to every outgoing envelope (no-op when the application's discovery descriptor has identity propagation disabled).
 3. Inbound: `CalloutIdentityMiddleware`, applied to every handler chain by default (opt out per message type with `[RequireIdentity(false)]`), verifies the `Callout-Identity` header and injects a `CalloutIdentityContext` parameter, or stops the chain on a missing/forged/expired header.
 

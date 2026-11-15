@@ -13,9 +13,12 @@ A new packable project, `src/AuthCallout.Client.Wolverine` (NuGet, same
 `AuthCallout.Client`; this package only binds it into Wolverine's NATS
 transport and handler pipeline.
 
-Dependencies: `AuthCallout.Client`, `WolverineFx`, `WolverineFx.Nats` (already
-pinned at 6.33.0 in `Directory.Packages.props` for the dev samples; promote to
-a `src/` dependency for this project only). Target `net10.0`.
+Dependencies: `AuthCallout.Client`, `WolverineFx`, `WolverineFx.Nats`. The
+published package declares a **minimum** of 6.47.0 (the first release with the
+`ConfigureNatsOpts` seam) through `VersionOverride` in the csproj. NuGet reads that
+as `>= 6.47.0`, so consumers can float to any newer Wolverine. The repo's central
+version (6.64.0 in `Directory.Packages.props`) only drives the tests and dev
+samples. Target `net10.0`.
 
 Serves both roles:
 
@@ -68,11 +71,14 @@ host.UseWolverine(opts =>
   `CalloutNatsConnection`).
 - Registers the P19 DI services (`ICalloutTokenProvider`,
   `ICalloutIdentityVerifier`, discovery cache) into the host container.
-- Investigate first (known risk, ADR 0022 consequences): whether
-  `WolverineFx.Nats` 6.x exposes `InboxPrefix` and `AuthCallback` cleanly; an
-  `AuthCallback` on the captured transport configuration is proven to work (the
-  NKey variant runs in production). Any gap is fixed in this adapter, or
-  upstreamed to Wolverine, never leaked into `AuthCallout.Client`.
+- **Resolved:** WolverineFx.Nats 6.33 had no `InboxPrefix` seam, so the first
+  implementation opened a second, scoped connection for KV reads. 6.47 added
+  `NatsTransportConfiguration.ConfigureNatsOpts`; the adapter now bumps to it,
+  sets the scoped `InboxPrefix` on Wolverine's own transport connection
+  (prefix computed by a hosted service ordered before Wolverine's runtime, since
+  the hook is synchronous), and runs all discovery/identity KV reads over that
+  single connection. Caveat: the principal is computed once from the first
+  token, which is correct for client-credentials services (stable `azp`).
 
 ### 2. Outbound: identity header on send
 

@@ -53,12 +53,13 @@ and other transport configuration chain as usual.
   `AuthCallback`, which NATS.NET invokes on **every (re)connect** — the token is
   never stale, satisfying [ADR 0021](https://github.com/ryandanthony/nats-auth-callout-service/blob/main/docs/architecture-decision-log/0021-client-connection-retry-semantics.md)'s
   reconnect rules. The token provider handles proactive refresh.
-- **A scoped KV connection.** Wolverine's own message bus never uses NATS.NET
-  request/reply inboxes (its reply subject is `wolverine.response.{node}`), so
-  the scoped-inbox requirement only applies to the raw JetStream KV reads the
-  identity features need. The package opens one correctly-scoped
-  `CalloutNatsConnection` for those, separate from Wolverine's transport
-  connection.
+- **A scoped transport connection.** The callout grants each connection only
+  its own inbox (`_INBOX.{app-slug}.{principal}.>`). The package sets Wolverine's
+  transport `InboxPrefix` to match via `ConfigureNatsOpts` (WolverineFx.Nats
+  6.47+), computing the prefix from the first token before Wolverine connects.
+  Discovery and identity KV reads then run over that **same single connection**,
+  so there is no second connection to manage. Requires WolverineFx.Nats 6.47 or
+  later.
 - **Outbound identity.** At host startup the package fetches the app's discovery
   descriptor and this connection's signed assertion, then stamps the
   `Callout-Identity` header onto every outgoing envelope. When the descriptor

@@ -112,11 +112,21 @@ public sealed class NatsTransportExtensionsTests
         });
 
         var provider = options.Services.BuildServiceProvider();
-        Assert.NotNull(provider.GetService<CalloutNatsConnection>());
+        Assert.NotNull(provider.GetService<CalloutTransportContext>());
+        Assert.NotNull(provider.GetService<CalloutWolverineOptions>());
         Assert.NotNull(provider.GetService<CalloutHostedConnection>());
         Assert.NotNull(provider.GetService<OutboundIdentityHeaderService>());
         Assert.NotNull(provider.GetService<ICalloutIdentityVerifierAccessor>());
         Assert.NotNull(provider.GetService<OutboundIdentityHeaderHolder>());
+
+        // The single-connection design (ConfigureNatsOpts seam): no second managed
+        // CalloutNatsConnection is registered; identity services use the transport's own
+        // connection via CalloutTransportContext.
+        Assert.Null(provider.GetService<CalloutNatsConnection>());
+
+        // The transport context captured the Wolverine transport at configuration time.
+        var transport = options.Transports.GetOrCreate<global::Wolverine.Nats.Internal.NatsTransport>();
+        Assert.Same(transport, provider.GetRequiredService<CalloutTransportContext>().Transport);
     }
 
     private sealed class RecordingTokenProvider : ICalloutTokenProvider

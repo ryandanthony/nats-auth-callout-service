@@ -4,9 +4,18 @@
     <Description>Wolverine integration for nats-auth-callout-service (ADR 0022): a thin adapter binding AuthCallout.Client's token acquisition, scoped connection, and identity-propagation seams into WolverineFx.Nats's transport and handler pipeline. All behavior lives in AuthCallout.Client; this package only wires it into Wolverine.</Description>
   </PropertyGroup>
 
+  <!--
+    Minimum-version dependency, not a pin: NuGet treats a plain version as ">= version", so the
+    published package lets consumers resolve any WolverineFx 6.47.0 or newer. 6.47.0 is the
+    first release with NatsTransportConfiguration.ConfigureNatsOpts, the seam the adapter's
+    single scoped connection depends on. VersionOverride keeps that floor here while the repo's
+    central version (Directory.Packages.props) stays on the latest WolverineFx, so the tests
+    and dev samples run against current Wolverine (CentralPackageTransitivePinningEnabled lifts
+    them to the central version).
+  -->
   <ItemGroup>
-    <PackageReference Include="WolverineFx" />
-    <PackageReference Include="WolverineFx.Nats" />
+    <PackageReference Include="WolverineFx" VersionOverride="6.47.0" />
+    <PackageReference Include="WolverineFx.Nats" VersionOverride="6.47.0" />
   </ItemGroup>
 
   <ItemGroup>

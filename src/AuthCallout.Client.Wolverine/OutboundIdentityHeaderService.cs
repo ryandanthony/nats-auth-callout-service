@@ -5,11 +5,7 @@
 // -----------------------------------------------------------------------
 
 using AuthCallout.Client.Connection;
-using AuthCallout.Client.DependencyInjection;
 using AuthCallout.Client.Identity;
-using AuthCallout.Client.Tokens;
-using Microsoft.Extensions.DependencyInjection;
-using NATS.Client.Core;
 using NATS.Net;
 
 namespace AuthCallout.Client.Wolverine;
@@ -18,45 +14,58 @@ namespace AuthCallout.Client.Wolverine;
 /// Builds, lazily on first use and cached thereafter (ADR 0022 task 2: "The assertion fetch...
 /// runs lazily on first send and is cached for the life of the connection"), the
 /// <c>Callout-Identity</c> header value this host attaches to outgoing Wolverine envelopes, and
-/// doubles as the <see cref="ICalloutIdentityVerifierAccessor"/> for the inbound middleware
-/// (both need the same discovery descriptor + KV connection
-/// <see cref="CalloutHostedConnection"/> establishes at startup, via
-/// <see cref="CalloutIdentityServices"/>).
+/// doubles as the <see cref="ICalloutIdentityVerifierAccessor"/> for the inbound middleware.
+/// Both run over the Wolverine transport's own connection
+/// <see cref="CalloutTransportContext.Connection"/>), whose scoped inbox prefix
+/// (<see cref="CalloutPrefixPrewarmService"/>) authorizes the KV request/reply traffic.
 /// </summary>
 public sealed class OutboundIdentityHeaderService : ICalloutIdentityVerifierAccessor, IDisposable
 {
-    private readonly IServiceProvider _serviceProvider;
+    private readonly CalloutWolverineOptions _options;
+    private readonly CalloutTransportContext _transportContext;
+    private readonly TimeProvider _timeProvider;
     private readonly SemaphoreSlim _buildLock = new(1, 1);
+
+    private CalloutIdentityResolver? _resolver;
     private CalloutIdentityHeader? _header;
+    private CalloutIdentityVerifier? _verifier;
     private string? _cachedHeaderValue;
 
     /// <summary>Initializes a new instance of the <see cref="OutboundIdentityHeaderService"/> class.</summary>
-    /// <param name="serviceProvider">The container to resolve <see cref="CalloutClientOptions"/>, <see cref="CalloutNatsConnection"/>, <see cref="DiscoveryDescriptorCache"/>, and <see cref="CalloutIdentityServices"/> from.</param>
-    public OutboundIdentityHeaderService(IServiceProvider serviceProvider)
+    /// <param name="options">The adapter options (application name + token provider).</param>
+    /// <param name="transportContext">The transport context exposing the Wolverine connection.</param>
+    /// <param name="timeProvider">The time provider for assertion expiry checks; defaults to <see cref="TimeProvider.System"/>.</param>
+    public OutboundIdentityHeaderService(CalloutWolverineOptions options, CalloutTransportContext transportContext, TimeProvider? timeProvider = null)
     {
-        ArgumentNullException.ThrowIfNull(serviceProvider);
-        _serviceProvider = serviceProvider;
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(transportContext);
+        _options = options;
+        _transportContext = transportContext;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <inheritdoc />
-    public Task<ICalloutIdentityVerifier> GetVerifierAsync(CancellationToken cancellationToken = default) =>
-        _serviceProvider.GetRequiredService<CalloutIdentityServices>().GetIdentityVerifierAsync(cancellationToken);
+    public async Task<ICalloutIdentityVerifier> GetVerifierAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureBuiltAsync(cancellationToken).ConfigureAwait(false);
+        return _verifier!;
+    }
 
     /// <summary>
     /// Pre-fetches and caches the identity header's name and value (ADR 0022 task 2: "cached for
-    /// the life of the connection... refreshed after reconnect"), called once by
-    /// <see cref="CalloutHostedConnection"/> at startup so <see cref="TryGetCachedHeaderValue"/>
-    /// always has an answer before <see cref="CalloutIdentityOutboundRule"/>'s synchronous
-    /// <c>Modify</c> ever needs it (a Wolverine <c>IEnvelopeRule</c> has no async hook to fetch
-    /// it lazily per send). A no-op (<see cref="TryGetCachedHeaderValue"/> then always returns
-    /// null) when the application's discovery descriptor has identity propagation disabled.
+    /// the life of the connection"), called once by <see cref="CalloutHostedConnection"/> after
+    /// Wolverine's transport has connected, so <see cref="TryGetCachedHeaderValue"/> always has
+    /// an answer before <see cref="CalloutIdentityOutboundRule"/>'s synchronous <c>Modify</c>
+    /// ever needs it (a Wolverine <c>IEnvelopeRule</c> has no async hook to fetch it lazily per
+    /// send). A no-op (<see cref="TryGetCachedHeaderValue"/> then always returns null) when the
+    /// application's discovery descriptor has identity propagation disabled.
     /// </summary>
     /// <param name="cancellationToken">Cancellation for the discovery/self-assertion fetch.</param>
     /// <returns>A task that completes once the header is cached.</returns>
     public async Task PrefetchAsync(CancellationToken cancellationToken = default)
     {
-        var header = await GetOrBuildHeaderAsync(cancellationToken).ConfigureAwait(false);
-        var headers = await header.AttachAsync(null, cancellationToken).ConfigureAwait(false);
+        await EnsureBuiltAsync(cancellationToken).ConfigureAwait(false);
+        var headers = await _header!.AttachAsync(null, cancellationToken).ConfigureAwait(false);
 
         // AttachAsync sets exactly one header (the descriptor's configured name, or
         // CalloutIdentityHeader.FallbackName) when propagation is enabled, or returns null when
@@ -81,56 +90,39 @@ public sealed class OutboundIdentityHeaderService : ICalloutIdentityVerifierAcce
     /// <param name="headerValue">The value <see cref="TryGetCachedHeaderValue"/> should return, or null.</param>
     internal void SetCachedHeaderValueForTests(string? headerValue) => _cachedHeaderValue = headerValue;
 
-    /// <summary>
-    /// Attaches the cached (fetching once if needed) <c>Callout-Identity</c> header to
-    /// <paramref name="headers"/>, or does nothing when identity propagation is disabled for
-    /// this application (ADR 0022 task 2: "no-op when the descriptor says <c>enabled: false</c>").
-    /// </summary>
-    /// <param name="headers">The headers to attach to; mutated in place. Created if null and propagation is enabled.</param>
-    /// <param name="cancellationToken">Cancellation for the self-assertion fetch, if needed.</param>
-    /// <returns>The headers to publish with (either <paramref name="headers"/> or a new instance), or null if propagation is disabled and none were supplied.</returns>
-    public async Task<NatsHeaders?> AttachAsync(NatsHeaders? headers, CancellationToken cancellationToken = default)
-    {
-        var header = await GetOrBuildHeaderAsync(cancellationToken).ConfigureAwait(false);
-        return await header.AttachAsync(headers, cancellationToken).ConfigureAwait(false);
-    }
-
     /// <inheritdoc />
     public void Dispose()
     {
         _buildLock.Dispose();
         _header?.Dispose();
+        _resolver?.Dispose();
     }
 
-    private async Task<CalloutIdentityHeader> GetOrBuildHeaderAsync(CancellationToken cancellationToken)
+    private async Task EnsureBuiltAsync(CancellationToken cancellationToken)
     {
-        if (_header is not null)
+        if (_verifier is not null && _header is not null)
         {
-            return _header;
+            return;
         }
 
         await _buildLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_header is null)
+            if (_verifier is null || _header is null)
             {
-                var options = _serviceProvider.GetRequiredService<CalloutClientOptions>();
-                var managed = _serviceProvider.GetRequiredService<CalloutNatsConnection>();
-                var connection = managed.Connection
-                    ?? throw new InvalidOperationException("The callout KV connection has not connected yet; this runs after CalloutHostedConnection.StartAsync.");
+                var connection = _transportContext.Connection;
+                var kv = connection.CreateKeyValueStoreContext();
+                var descriptor = await CalloutDiscovery.FetchAsync(kv, _options.ApplicationName, cancellationToken).ConfigureAwait(false);
 
-                var kv = ((INatsConnection)connection).CreateKeyValueStoreContext();
-                var cache = _serviceProvider.GetRequiredService<DiscoveryDescriptorCache>();
-                var descriptor = await cache.GetOrFetchAsync(kv, options.ApplicationName, cancellationToken).ConfigureAwait(false);
-
-                var tokenProvider = _serviceProvider.GetRequiredService<ICalloutTokenProvider>();
-                var presentedToken = await tokenProvider.GetTokenAsync(cancellationToken).ConfigureAwait(false)
+                // Must be the token the transport actually presented, not a fresh fetch: the
+                // self-assertion is keyed by the presented token's jti.
+                var presentedToken = _transportContext.PresentedToken
                     ?? throw new CalloutAuthenticationRequiredException();
 
                 _header = new CalloutIdentityHeader(kv, descriptor, presentedToken);
+                _resolver = new CalloutIdentityResolver(kv, descriptor, _timeProvider);
+                _verifier = new CalloutIdentityVerifier(_resolver);
             }
-
-            return _header;
         }
         finally
         {

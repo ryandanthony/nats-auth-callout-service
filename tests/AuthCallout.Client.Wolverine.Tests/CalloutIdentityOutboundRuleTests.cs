@@ -31,7 +31,7 @@ public sealed class CalloutIdentityOutboundRuleTests
     [Fact]
     public void Modify_NoCachedHeaderValue_LeavesHeadersUntouched()
     {
-        var service = new OutboundIdentityHeaderService(EmptyServiceProvider.Instance);
+        var service = new OutboundIdentityHeaderService(TestOptions(), new CalloutTransportContext());
         var holder = new OutboundIdentityHeaderHolder { Service = service };
         var rule = new CalloutIdentityOutboundRule(holder);
         var envelope = new Envelope { Data = [] };
@@ -44,7 +44,7 @@ public sealed class CalloutIdentityOutboundRuleTests
     [Fact]
     public void Modify_CachedHeaderValue_AttachesHeaderToEnvelope()
     {
-        var service = new OutboundIdentityHeaderService(EmptyServiceProvider.Instance);
+        var service = new OutboundIdentityHeaderService(TestOptions(), new CalloutTransportContext());
         service.SetCachedHeaderValueForTests("compact-jwt");
         var holder = new OutboundIdentityHeaderHolder { Service = service };
         var rule = new CalloutIdentityOutboundRule(holder);
@@ -63,11 +63,6 @@ public sealed class CalloutIdentityOutboundRuleTests
         Assert.Throws<ArgumentNullException>(() => rule.Modify(null!));
     }
 
-    /// <summary>A minimal <see cref="IServiceProvider"/> for constructing <see cref="OutboundIdentityHeaderService"/> in tests that never resolve services.</summary>
-    private sealed class EmptyServiceProvider : IServiceProvider
-    {
-        public static readonly EmptyServiceProvider Instance = new();
-
-        public object? GetService(Type serviceType) => null;
-    }
+    /// <summary>Minimal valid options for constructing <see cref="OutboundIdentityHeaderService"/> in tests that never fetch.</summary>
+    private static CalloutWolverineOptions TestOptions() => new() { ApplicationName = "notes" };
 }

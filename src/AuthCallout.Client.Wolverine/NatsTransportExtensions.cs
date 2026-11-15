@@ -5,9 +5,8 @@
 // -----------------------------------------------------------------------
 
 using AuthCallout.Client.Connection;
-using AuthCallout.Client.DependencyInjection;
-using AuthCallout.Client.Tokens;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using NATS.Client.Core;
 using Wolverine;
 using Wolverine.Nats;
@@ -16,10 +15,10 @@ using Wolverine.Nats.Internal;
 namespace AuthCallout.Client.Wolverine;
 
 /// <summary>
-/// <c>opts.UseNatsWithCallout(callout =&gt; ...)</c> (ADR 0022 task 1): the Wolverine-shaped
-/// equivalent of <c>AddCalloutNatsClient</c>, binding <see cref="AuthCallout.Client"/>'s token
-/// provider into <c>WolverineFx.Nats</c>'s transport, plus the outbound identity-header attach
-/// (task 2) and inbound verification middleware/policy (task 3) built on it.
+/// <c>opts.UseNatsWithCallout(callout =&gt; ...)</c> (ADR 0022 task 1): binds
+/// <see cref="AuthCallout.Client"/>'s token provider into <c>WolverineFx.Nats</c>'s transport,
+/// plus the outbound identity-header attach (task 2) and inbound verification
+/// middleware/policy (task 3) built on it.
 /// </summary>
 public static class NatsTransportExtensions
 {
@@ -30,29 +29,19 @@ public static class NatsTransportExtensions
     /// the adapter's outbound rule and inbound middleware/policy depend on.
     /// </summary>
     /// <remarks>
-    /// Wolverine owns the underlying <c>NatsConnection</c> lifecycle (unlike
-    /// <see cref="CalloutNatsConnection"/>'s self-owned reconnect pipeline), so the bearer token
-    /// cannot flow through a pre-built <c>NatsOpts.AuthOpts.Token</c>: it is supplied via
-    /// <c>NatsTransportConfiguration.AuthCallback</c> (<c>Func&lt;Uri, CancellationToken,
-    /// ValueTask&lt;NatsAuthCred&gt;&gt;</c>), which <c>WolverineFx.Nats</c> 6.x forwards straight
-    /// through to <c>NatsAuthOpts.AuthCredCallback</c> and NATS.NET invokes on every (re)connect —
-    /// exactly the "every (re)connect pulls a current token" requirement (ADR 0021 rules 4-5).
-    /// This is the proven seam (ADR 0022's "Prior art to steal": the NKey-seed variant of the
-    /// same callback already runs in production); <see cref="AuthCallout.Client"/> needed no
-    /// changes to support it.
+    /// Wolverine owns the underlying <c>NatsConnection</c> lifecycle, so the bearer token
+    /// flows through <c>NatsTransportConfiguration.AuthCallback</c>, which NATS.NET invokes on
+    /// every (re)connect — exactly the "every (re)connect pulls a current token" requirement
+    /// (ADR 0021 rules 4-5).
     ///
-    /// <c>WolverineFx.Nats</c> 6.33's <c>NatsTransportConfiguration</c> has no
-    /// <c>InboxPrefix</c>/custom-inbox knob (its <c>ToNatsOpts()</c> leaves NATS.NET's default
-    /// <c>_INBOX</c> in place), but that scoping only matters for the raw JetStream KV reads this
-    /// adapter needs for discovery and identity verification (the callout's grant authorizes
-    /// <c>_INBOX.{slug}.{principal}.&gt;</c>, never the account-wide <c>_INBOX.&gt;</c>) — it does
-    /// not apply to Wolverine's own message bus, which never uses NATS.NET's request/reply inbox
-    /// (Wolverine's reply subject is <c>wolverine.response.{node}</c>, a plain subject the app's
-    /// grant profile authorizes like any other). So rather than patching Wolverine's transport
-    /// connection (no seam exists to), this adapter opens a second, correctly-scoped connection
-    /// via <see cref="AuthCallout.Client.DependencyInjection.ServiceCollectionExtensions.AddCalloutNatsClient"/>
-    /// (<see cref="CalloutNatsOpts.CreateAsync"/> already gets the scoped prefix right) purely
-    /// for KV access; it is never used for Wolverine messages.
+    /// The transport's single connection also carries the callout's scoped inbox grant: the
+    /// <c>ConfigureNatsOpts</c> seam (WolverineFx.Nats 6.47+) sets <c>NatsOpts.InboxPrefix</c>
+    /// to <c>_INBOX.{slug}.{principal}</c>, with the principal pre-computed from the first
+    /// token by <see cref="CalloutPrefixPrewarmService"/> (inserted ahead of Wolverine's own
+    /// runtime in hosted-service start order, because the hook itself is synchronous). All
+    /// discovery and identity KV reads then run over this same connection
+    /// (<see cref="CalloutTransportContext"/>); earlier versions of this adapter had to open a
+    /// second KV-only connection because the seam didn't exist.
     /// </remarks>
     /// <param name="options">The Wolverine options being configured.</param>
     /// <param name="configure">Configures <see cref="CalloutWolverineOptions"/> (URL, application name, token provider).</param>
@@ -70,35 +59,46 @@ public static class NatsTransportExtensions
             throw new ArgumentException("TokenProvider must be set (directly, or via UseClientCredentials).", nameof(configure));
         }
 
-        var tokenProvider = calloutOptions.TokenProvider;
+        var transportContext = new CalloutTransportContext();
+        RegisterIdentityServices(options, calloutOptions, transportContext);
 
-        // The second, correctly-scoped connection used only for discovery/identity KV reads
-        // (see the <remarks> above): AddCalloutNatsClient registers CalloutNatsConnection,
-        // DiscoveryDescriptorCache, and CalloutIdentityServices, none of which are shared with
-        // Wolverine's own transport connection.
-        options.Services.AddCalloutNatsClient(client =>
-        {
-            client.Url = calloutOptions.Url;
-            client.ApplicationName = calloutOptions.ApplicationName;
-            client.TokenProvider = tokenProvider;
-            client.Name = calloutOptions.Name;
-        });
+        var expression = ConfigureTransport(options, calloutOptions, transportContext);
+        transportContext.Transport = options.Transports.GetOrCreate<NatsTransport>();
+        return expression;
+    }
 
+    private static void RegisterIdentityServices(global::Wolverine.WolverineOptions options, CalloutWolverineOptions calloutOptions, CalloutTransportContext transportContext)
+    {
         options.Services.AddSingleton(calloutOptions);
-        options.Services.AddSingleton<CalloutHostedConnection>();
-        options.Services.AddHostedService(sp => sp.GetRequiredService<CalloutHostedConnection>());
+        options.Services.AddSingleton(transportContext);
+
+        // Start order matters twice here (see CalloutPrefixPrewarmService's doc comment):
+        // the prefix prewarm must run BEFORE Wolverine's runtime (which Wolverine registered
+        // before this configure callback ran) connects the transport, so it is inserted at the
+        // front of the service collection; the header prefetch must run AFTER (it reads KV over
+        // the transport's connection), so it is appended normally below.
+        options.Services.Insert(
+            0,
+            ServiceDescriptor.Singleton<IHostedService>(sp => ActivatorUtilities.CreateInstance<CalloutPrefixPrewarmService>(sp)));
+
         options.Services.AddSingleton<OutboundIdentityHeaderService>();
         options.Services.AddSingleton<ICalloutIdentityVerifierAccessor>(sp => sp.GetRequiredService<OutboundIdentityHeaderService>());
 
         var outboundHeaderHolder = new OutboundIdentityHeaderHolder();
         options.Services.AddSingleton(outboundHeaderHolder);
         options.MetadataRules.Add(new CalloutIdentityOutboundRule(outboundHeaderHolder));
+        options.Services.AddSingleton<CalloutHostedConnection>();
+        options.Services.AddHostedService(sp => sp.GetRequiredService<CalloutHostedConnection>());
 
         // Policy-with-opt-out default (ADR 0022 open question 1, task 3): every handler chain
         // listening on a NATS endpoint gets the identity-verification middleware, unless
         // RequireIdentity(false) exempted that specific chain (CalloutIdentityPolicy.cs).
         options.Policies.AddMiddleware(typeof(CalloutIdentityMiddleware), CalloutIdentityPolicy.AppliesTo);
+    }
 
+    private static NatsTransportExpression ConfigureTransport(global::Wolverine.WolverineOptions options, CalloutWolverineOptions calloutOptions, CalloutTransportContext transportContext)
+    {
+        var tokenProvider = calloutOptions.TokenProvider!;
         return options.UseNats(transport =>
         {
             transport.ConnectionString = calloutOptions.Url;
@@ -114,8 +114,17 @@ public static class NatsTransportExtensions
                     throw new CalloutAuthenticationRequiredException();
                 }
 
+                // Record exactly what was presented: the callout keys this connection's
+                // self-assertion by this token's jti (see CalloutTransportContext.PresentedToken).
+                transportContext.PresentedToken = token;
                 return NatsAuthCred.FromToken(token);
             };
+
+            // Scope the transport connection's inbox to the callout's grant. The prewarm
+            // service has already populated the prefix by the time Wolverine's runtime builds
+            // the connection and invokes this synchronous hook.
+            transport.ConfigureNatsOpts = opts =>
+                transportContext.InboxPrefix is { } prefix ? opts with { InboxPrefix = prefix } : opts;
         });
     }
 }
