@@ -6,8 +6,9 @@
     NuGet packaging for src/. Only the integration surface ships as packages (doc 06 / ADR 0010-0014:
     what a client or subscriber needs to work with the callout): AuthCallout.Contracts (AppSlug bucket,
     key and inbox naming, AssertionClaims), AuthCallout.Identity (AssertionSigner.Verify), AuthCallout.Core
-    because Identity references it (ClaimsAccessor), and AuthCallout.Client (ADR 0020: the consumer-side
-    integration library - token acquisition, managed connection, discovery, identity propagation).
+    because Identity references it (ClaimsAccessor), AuthCallout.Client (ADR 0020: the consumer-side
+    integration library - token acquisition, managed connection, discovery, identity propagation), and
+    AuthCallout.Client.Wolverine (ADR 0022: a thin Wolverine/WolverineFx.Nats adapter over AuthCallout.Client).
     Every other src/ project is the service itself and stays IsPackable=false. Published to nuget.org by
     release.yml on every green push to main (one release, tag and version per push) via
     Trusted Publishing.
@@ -16,7 +17,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'AuthCallout.Contracts' or '$(MSBuildProjectName)' == 'AuthCallout.Core' or '$(MSBuildProjectName)' == 'AuthCallout.Identity' or '$(MSBuildProjectName)' == 'AuthCallout.Client'">
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'AuthCallout.Contracts' or '$(MSBuildProjectName)' == 'AuthCallout.Core' or '$(MSBuildProjectName)' == 'AuthCallout.Identity' or '$(MSBuildProjectName)' == 'AuthCallout.Client' or '$(MSBuildProjectName)' == 'AuthCallout.Client.Wolverine'">
     <IsPackable>true</IsPackable>
     <PackageId>$(MSBuildProjectName)</PackageId>
     <Authors>Ryan Anthony</Authors>

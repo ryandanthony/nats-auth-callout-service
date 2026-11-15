@@ -4,7 +4,7 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
-using AuthCallout.Dev.Samples.Common;
+using AuthCallout.Client.Identity;
 using Microsoft.Extensions.Logging;
 using Wolverine.Attributes;
 

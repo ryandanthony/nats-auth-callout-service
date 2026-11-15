@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- P15 sample app (dev/ only), Wolverine edition: the "tasks" application modeled as a
-       Wolverine app over NATS, authenticated through the callout - a second, independent
-       application from NoteService (own account/issuer match/subject space) proving isolation
-       (ADR 0001). Domain (commands/queries/events) with an in-memory store, plus an in-process
-       demo client attaching its Callout-Identity assertion, verified by CalloutIdentityMiddleware
-       (Shared). Not referenced by src/ or tests/; both AppHosts add it as Projects.TaskService. -->
+  <!-- P20 sample app (dev/ only): the "tasks" application modeled as a Wolverine app over
+       NATS, authenticated through the callout via AuthCallout.Client.Wolverine - a second,
+       independent application from NoteService (own account/issuer match/subject space)
+       proving isolation (ADR 0001). Domain (commands/queries/events) with an in-memory store,
+       plus an in-process demo client. Identity propagation is handled entirely by the package.
+       Not referenced by src/ or tests/; both AppHosts add it as Projects.TaskService. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -17,14 +17,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="NATS.Net" />
-    <PackageReference Include="WolverineFx" />
-    <PackageReference Include="WolverineFx.Nats" />
     <PackageReference Include="WolverineFx.RuntimeCompilation" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../Shared/SampleSupport.csproj" />
+    <ProjectReference Include="../../../src/AuthCallout.Client.Wolverine/AuthCallout.Client.Wolverine.csproj" />
   </ItemGroup>
 
 </Project>

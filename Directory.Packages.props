@@ -16,12 +16,13 @@
     <PackageVersion Include="NATS.NKeys" Version="1.0.2" />
   </ItemGroup>
 
-  <ItemGroup Label="Wolverine (dev sample messaging, dev/ only — not referenced by any shipped src/ project)">
+  <ItemGroup Label="Wolverine (P20: shipped by src/AuthCallout.Client.Wolverine; also used by dev/samples)">
     <PackageVersion Include="WolverineFx" Version="6.33.0" />
     <PackageVersion Include="WolverineFx.Nats" Version="6.33.0" />
     <!-- Core WolverineFx 6.x no longer ships the runtime (Roslyn) handler-code compiler; a
          host that lets Wolverine generate handler/middleware code at startup must reference
-         this, else it throws TypeLoadMode.Dynamic-with-no-IAssemblyGenerator on boot. -->
+         this, else it throws TypeLoadMode.Dynamic-with-no-IAssemblyGenerator on boot. Dev-only:
+         AuthCallout.Client.Wolverine itself never needs runtime codegen. -->
     <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.33.0" />
   </ItemGroup>
 

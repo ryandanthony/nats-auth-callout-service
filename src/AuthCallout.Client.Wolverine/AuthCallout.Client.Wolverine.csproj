@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Wolverine integration for nats-auth-callout-service (ADR 0022): a thin adapter binding AuthCallout.Client's token acquisition, scoped connection, and identity-propagation seams into WolverineFx.Nats's transport and handler pipeline. All behavior lives in AuthCallout.Client; this package only wires it into Wolverine.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WolverineFx" />
+    <PackageReference Include="WolverineFx.Nats" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AuthCallout.Client\AuthCallout.Client.csproj" />
+  </ItemGroup>
+
+</Project>

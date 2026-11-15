@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Shared/SampleSupport.csproj" />
+    <ProjectReference Include="../../../src/AuthCallout.Client/AuthCallout.Client.csproj" />
     <!-- Only for CalloutResponderMetrics.DurationBucketBoundariesMilliseconds, so the client-side
          connect histogram shares the callout's bucket boundaries exactly. -->
     <ProjectReference Include="../../../src/AuthCallout.Nats/AuthCallout.Nats.csproj" />
