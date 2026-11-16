@@ -21,9 +21,6 @@ kind: HelmRelease
 metadata:
   name: nacs
 spec:
-  # Suspended until the first app CR (mise) exists: with no AuthApplication to serve the
-  # callout stays Idle, /readyz never goes green, and Helm's install wait would fail.
-  suspend: true
   interval: 10m
   chartRef:
     kind: OCIRepository
