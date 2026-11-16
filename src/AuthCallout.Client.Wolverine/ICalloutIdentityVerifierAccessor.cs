@@ -11,7 +11,8 @@ namespace AuthCallout.Client.Wolverine;
 /// <summary>
 /// The DI-registered seam <see cref="CalloutIdentityMiddleware"/> depends on: the async
 /// accessor to this host's <see cref="ICalloutIdentityVerifier"/> (building it, on first call,
-/// from the KV connection <see cref="CalloutHostedConnection"/> establishes at startup — mirrors
+/// over the Wolverine transport's own connection, <see cref="CalloutTransportContext.Connection"/>,
+/// which only exists once Wolverine's runtime has started; mirrors
 /// <c>AuthCallout.Client.DependencyInjection.CalloutIdentityServices.GetIdentityVerifierAsync</c>,
 /// which a synchronous DI factory cannot call directly without sync-over-async).
 /// </summary>

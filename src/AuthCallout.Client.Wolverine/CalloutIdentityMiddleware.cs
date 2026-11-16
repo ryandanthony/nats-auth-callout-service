@@ -13,9 +13,10 @@ namespace AuthCallout.Client.Wolverine;
 /// <summary>
 /// Inbound half of ADR 0022 task 3: promoted from <c>dev/samples/Shared/CalloutIdentityMiddleware.cs</c>
 /// to the package, now built on <see cref="ICalloutIdentityVerifierAccessor"/> rather than a
-/// directly-injected verifier, since this host's verifier is only available once
-/// <see cref="CalloutHostedConnection"/> has connected the KV context and fetched discovery
-/// (the DI container cannot resolve it synchronously). <see cref="CalloutIdentityPolicy"/> binds
+/// directly-injected verifier, since this host's verifier is only available once Wolverine's
+/// transport has connected (its KV reads and discovery fetch run over that connection, see
+/// <see cref="CalloutTransportContext"/>), which the DI container cannot wait for synchronously.
+/// <see cref="CalloutIdentityPolicy"/> binds
 /// this middleware to every handler chain by default (packet P20's "policy so apps can't forget
 /// a handler").
 /// </summary>

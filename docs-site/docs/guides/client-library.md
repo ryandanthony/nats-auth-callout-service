@@ -116,11 +116,12 @@ token's `sub` (falling back to `azp`) automatically — if you build your own
 Client side — attach your signed assertion to outgoing messages:
 
 ```csharp
-var kv = connection.Connection!.CreateKeyValueStoreContext();
+var nats = connection.Connection!;   // non-null once ConnectAsync has completed
+var kv = nats.CreateKeyValueStoreContext();
 var descriptor = await CalloutDiscovery.FetchAsync(kv, "orders");
 using var header = new CalloutIdentityHeader(kv, descriptor, presentedToken);
 var headers = await header.AttachAsync(null);   // null when propagation is disabled
-await connection.Connection.PublishAsync("orders.commands", payload, headers: headers);
+await nats.PublishAsync("orders.commands", payload, headers: headers);
 ```
 
 Service side — verify before trusting:
