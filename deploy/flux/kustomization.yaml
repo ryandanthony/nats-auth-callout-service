@@ -1,0 +1,11 @@
+# Flux entry point for NACS on the shared app cluster (apps-node01).
+# The cluster has a GitRepository "nats-auth-callout-service" + Kustomization of the same
+# name pointing at this directory (see onboarding/). Everything NACS needs in-cluster is
+# declared here; apps (mise, ...) ship their AuthApplication CRs from their own repos.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - crds
+  - namespaces.yaml
+  - test
+  - prod

@@ -1,0 +1,8 @@
+# The AuthApplication CRD, cluster-scoped and shared by both NACS instances (test + prod).
+# Applied here rather than by the chart (source.k8s.crds.install: false in both releases):
+# two releases cannot both own one cluster-scoped object, and app repos need the CRD to
+# exist before their CRs can apply. deploy/crd/ is the canonical copy (P11).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../crd/authapplication-crd.yaml

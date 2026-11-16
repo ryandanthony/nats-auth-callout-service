@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nacs-test
+  labels:
+    app.kubernetes.io/part-of: nats-auth-callout-service
+    environment: test
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nacs-prod
+  labels:
+    app.kubernetes.io/part-of: nats-auth-callout-service
+    environment: prod
+---
+# Quotas size each instance for one node (7.5 GiB): NACS is light (~60 MiB resident).
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: nacs-test
+  namespace: nacs-test
+spec:
+  hard:
+    requests.cpu: 500m
+    requests.memory: 512Mi
+    limits.memory: 1Gi
+    pods: "4"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: nacs-prod
+  namespace: nacs-prod
+spec:
+  hard:
+    requests.cpu: "1"
+    requests.memory: 1Gi
+    limits.memory: 2Gi
+    pods: "6"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: defaults
+  namespace: nacs-test
+spec:
+  limits:
+    - type: Container
+      defaultRequest: { cpu: 50m, memory: 64Mi }
+      default: { memory: 256Mi }
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: defaults
+  namespace: nacs-prod
+spec:
+  limits:
+    - type: Container
+      defaultRequest: { cpu: 50m, memory: 64Mi }
+      default: { memory: 256Mi }

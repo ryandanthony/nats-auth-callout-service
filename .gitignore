@@ -38,3 +38,4 @@ dev/**/.k3s/
 
 # AppHost.Local --callout docker renders its container config here from config/ (DockerCalloutConfig)
 dev/AppHost.Local/config-docker/
+.tmp-flux/

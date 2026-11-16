@@ -1,0 +1,33 @@
+# One-time onboarding of this repo onto the shared app cluster (apps-node01).
+# Applied by hand (kubectl apply -f deploy/flux/onboarding/), NOT reconciled from
+# deploy/flux itself. The repo is public, so no deploy key or secret is needed.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: nats-auth-callout-service
+  namespace: flux-system
+spec:
+  interval: 5m
+  url: https://github.com/ryandanthony/nats-auth-callout-service
+  ref:
+    branch: main
+  # Only what deploy/flux needs: itself and the canonical CRD it references.
+  ignore: |
+    /*
+    !/deploy/flux/
+    !/deploy/crd/
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: nats-auth-callout-service
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: nats-auth-callout-service
+  path: ./deploy/flux
+  prune: true
+  wait: false
+  timeout: 5m

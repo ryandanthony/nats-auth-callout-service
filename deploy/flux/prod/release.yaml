@@ -1,0 +1,87 @@
+# nacs-prod: the auth callout for tls://apps.ants.zone:4222 (Keycloak realm apps).
+# Follows main: every release publishes chart+image <semver>; Flux picks the newest stable
+# version on each poll.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: nacs-chart
+spec:
+  interval: 5m
+  url: oci://ghcr.io/ryandanthony/charts/nats-auth-callout-service
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  ref:
+    semver: ">=0.0.0"
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: nacs
+spec:
+  # Suspended until the first app CR (mise) exists: with no AuthApplication to serve the
+  # callout stays Idle, /readyz never goes green, and Helm's install wait would fail.
+  suspend: true
+  interval: 10m
+  chartRef:
+    kind: OCIRepository
+    name: nacs-chart
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  values:
+    # Unique per env: the chart's ClusterRole/ClusterRoleBinding are cluster-scoped and
+    # named after the fullname, so two releases with the same fullname would collide.
+    fullnameOverride: nacs-prod
+    imagePullSecrets:
+      - name: ghcr-pull
+    # One node: a second replica adds nothing, and a PDB would block draining it.
+    replicaCount: 1
+    podDisruptionBudget:
+      enabled: false
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 384Mi }
+    natsUrl: tls://apps.ants.zone:4222
+    # Seeds are Secrets created out of band from the NAS seed files (this repo is public);
+    # see deploy/flux/README.md. The assertion kid matches the NAS instance it replaces.
+    secrets:
+      issuerSeed:
+        existingSecret: nacs-issuer
+        key: seed
+      serviceUserSeed:
+        enabled: true
+        existingSecret: nacs-service
+        key: seed
+      assertionKeys:
+        - kid: apps-2026-11
+          existingSecret: nacs-assertion
+          key: seed
+          active: true
+    source:
+      kind: k8s
+      k8s:
+        # Apps label their AuthApplication CRs with this to be served by prod.
+        labelSelector: authcallout.ants.zone/owner=apps
+        crds:
+          install: false   # deploy/flux/crds owns the shared CRD
+        rbac:
+          create: true
+    bootstrap:
+      jwks:
+        prewarmRequired: true
+      concurrency:
+        maxDegreeOfParallelism: 8
+        perRequestTimeout: 1500ms
+      anonymous:
+        targetAccount: ANON
+        expiry: 5m
+      warnStaleness: 60s
+      maxStaleness: 15m
+      reconnectBackoff: 5s

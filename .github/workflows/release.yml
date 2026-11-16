@@ -75,6 +75,7 @@ jobs:
           if [ -n "$LAST" ]; then
             CHANGED="$(git diff --name-only "$LAST" "$SHA" -- . \
               ':(exclude)docs/**' ':(exclude)docs-site/**' ':(exclude)implementation-plan/**' \
+              ':(exclude)deploy/flux/**' \
               ':(exclude)**/*.md' ':(exclude)*.md' ':(exclude).github/workflows/docs.yml')"
             if [ -z "$CHANGED" ]; then
               echo "Only docs changed since $LAST; nothing to release."
@@ -245,14 +246,48 @@ jobs:
             --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 
-  # Tag + GitHub Release are created together, last, only once the image is published and
-  # the NuGet job did not fail (it may be skipped when NUGET_USER is unset).
+  # Helm chart to GHCR as an OCI artifact (oci://ghcr.io/<owner>/charts/nats-auth-callout-service),
+  # the convention Flux on the apps cluster pulls from. Chart version == appVersion == image tag,
+  # so one number describes a release. Runs after the image so a chart version never points at
+  # an image tag that doesn't exist.
+  chart:
+    needs: [version, image]
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.16.2"
+
+      - name: Package chart
+        run: >-
+          helm package deploy/helm/nats-auth-callout-service
+          --version ${{ needs.version.outputs.version }}
+          --app-version ${{ needs.version.outputs.version }}
+          --destination ./chart
+
+      - name: Push chart to GHCR
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "${{ env.REGISTRY }}" -u "${{ github.actor }}" --password-stdin
+          helm push "./chart/nats-auth-callout-service-${{ needs.version.outputs.version }}.tgz" \
+            "oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts"
+
+  # Tag + GitHub Release are created together, last, only once the image and chart are
+  # published and the NuGet job did not fail (it may be skipped when NUGET_USER is unset).
   release:
-    needs: [version, image, nuget]
+    needs: [version, image, chart, nuget]
     if: >-
       always() &&
       needs.version.outputs.release == 'true' &&
       needs.image.result == 'success' &&
+      needs.chart.result == 'success' &&
       (needs.nuget.result == 'success' || needs.nuget.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
