@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally><TreatWarningsAsErrors>false</TreatWarningsAsErrors><RunAnalyzers>false</RunAnalyzers><GenerateDocumentationFile>false</GenerateDocumentationFile></PropertyGroup>
-  <ItemGroup><PackageReference Include="NATS.Net" Version="3.2.0" /></ItemGroup>
+  <ItemGroup><PackageReference Include="NATS.Net" Version="3.2.0" /><PackageReference Include="AuthCallout.Contracts" Version="0.1.35" /></ItemGroup>
 </Project>
