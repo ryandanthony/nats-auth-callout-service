@@ -6,11 +6,17 @@ sidebar_position: 3
 
 ## Helm chart
 
+Each release publishes the chart as an OCI artifact next to the image. The chart
+version, its `appVersion` and the image tag are the same number:
+
 ```bash
-helm install auth-callout deploy/helm/nats-auth-callout-service \
+helm install auth-callout oci://ghcr.io/ryandanthony/charts/nats-auth-callout-service \
+  --version <release> \
   --set source.kind=files \
   --set secrets.issuerSeed.existingSecret=authcallout-issuer-seed
 ```
+
+From a checkout, `deploy/helm/nats-auth-callout-service` works the same way.
 
 Defaults: `replicaCount: 2` (HA queue-group), a `PodDisruptionBudget`
 (`minAvailable: 1`), non-root `securityContext` with a read-only root
